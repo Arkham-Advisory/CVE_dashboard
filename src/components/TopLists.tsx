@@ -5,6 +5,7 @@ import { InfoTooltip } from '@/components/InfoTooltip'
 import { useAppStore } from '@/store/useAppStore'
 import { CONCEPT_TOOLTIPS } from '@/lib/riskScore'
 import { Zap, Target, Bomb } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 export function TopCVEs() {
   const { metrics } = useAppStore()
@@ -21,7 +22,12 @@ export function TopCVEs() {
           <div key={cveId} className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2">
               <SeverityBadge severity={severity} />
-              <span className="font-mono font-medium text-xs">{cveId}</span>
+              <Link
+                to={`/findings?q=${encodeURIComponent(cveId)}`}
+                className="font-mono font-medium text-xs text-primary hover:underline"
+              >
+                {cveId}
+              </Link>
             </div>
             <div className="text-right">
               <div className="text-xs text-muted-foreground">{count} findings</div>
@@ -49,9 +55,13 @@ export function TopAssets() {
       <CardContent className="space-y-2">
         {metrics.topAssets.map(({ asset, count, bySeverity }) => (
           <div key={asset} className="flex items-center justify-between text-sm">
-            <span className="truncate font-medium max-w-[180px] text-xs" title={asset}>
+            <Link
+              to={`/findings?q=${encodeURIComponent(asset)}`}
+              className="truncate font-medium max-w-[180px] text-xs hover:underline text-primary"
+              title={asset}
+            >
               {asset}
-            </span>
+            </Link>
             <div className="text-right">
               <div className="text-xs text-muted-foreground">{count} findings</div>
               {bySeverity.CRITICAL > 0 && (

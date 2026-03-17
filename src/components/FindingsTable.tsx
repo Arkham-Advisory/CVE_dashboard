@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   useReactTable,
   getCoreRowModel,
@@ -21,6 +22,10 @@ import {
   Zap,
   ShieldAlert,
   FlaskConical,
+  Link2,
+  Check,
+  Flag,
+  Globe,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,8 +46,12 @@ import {
 } from '@/components/ui/select'
 import { useAppStore } from '@/store/useAppStore'
 import { getFixStatus } from '@/lib/riskScore'
-import type { Finding, Severity, FixStatus } from '@/types'
+import type { Finding, Severity, FixStatus, RiskPriority } from '@/types'
 import { SEVERITY_ORDER } from '@/types'
+
+function parseList(val: string | null): string[] {
+  return val ? val.split(',').filter(Boolean) : []
+}
 
 const SEVERITIES: Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'NONE', 'UNKNOWN']
 
@@ -149,17 +158,187 @@ function ExploitFlags({ finding }: { finding: Finding }) {
     </TooltipProvider>
   )
 }
+// ── Exploit Filter ────────────────────────────────────────────────────────
+const EXPLOIT_OPTIONS = [
+  { value: 'kev',     label: 'KEV (actively exploited)' },
+  { value: 'exploit', label: 'Exploit available' },
+  { value: 'poc',     label: 'PoC available' },
+  { value: 'none',    label: 'No exploit info' },
+] as const
 
+function ExploitFilter({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
+  const [open, setOpen] = useState(false)
+  const toggle = (v: string) =>
+    onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v])
+  return (
+    <div className="relative">
+      <button
+        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted ${
+          selected.length > 0 ? 'border-primary bg-primary/5 text-primary' : 'border-input bg-background'
+        }`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Zap className="h-3.5 w-3.5" />
+        Exploit
+        {selected.length > 0 && (
+          <span className="ml-0.5 rounded-full bg-primary/20 px-1 text-[10px] font-bold">{selected.length}</span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute top-full mt-1 left-0 z-30 bg-popover border rounded-md shadow-md p-2 space-y-1 min-w-[205px]">
+          <button className="w-full text-left px-2 py-1.5 text-xs hover:bg-muted rounded" onClick={() => onChange([])}>
+            <CheckSquare2 className="inline h-3.5 w-3.5 mr-1.5" />Clear all
+          </button>
+          <div className="border-t my-1" />
+          {EXPLOIT_OPTIONS.map((opt) => (
+            <label key={opt.value} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-muted cursor-pointer">
+              <Checkbox checked={selected.includes(opt.value)} onCheckedChange={() => toggle(opt.value)} className="h-3.5 w-3.5" />
+              <span className="text-xs">{opt.label}</span>
+            </label>
+          ))}
+          <button className="w-full text-right px-2 py-1.5 text-xs text-primary hover:underline" onClick={() => setOpen(false)}>Done</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Priority Filter ───────────────────────────────────────────────────────
+const PRIORITY_OPTIONS: { value: RiskPriority; label: string; colorClass: string }[] = [
+  { value: 'IMMEDIATE',     label: 'Immediate',     colorClass: 'text-red-600' },
+  { value: 'HIGH_PRIORITY', label: 'High Priority', colorClass: 'text-orange-600' },
+  { value: 'SCHEDULED_FIX', label: 'Scheduled Fix', colorClass: 'text-yellow-600' },
+  { value: 'MONITOR',       label: 'Monitor',       colorClass: 'text-blue-600' },
+]
+
+function PriorityFilter({ selected, onChange }: { selected: RiskPriority[]; onChange: (v: RiskPriority[]) => void }) {
+  const [open, setOpen] = useState(false)
+  const toggle = (v: RiskPriority) =>
+    onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v])
+  return (
+    <div className="relative">
+      <button
+        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted ${
+          selected.length > 0 ? 'border-primary bg-primary/5 text-primary' : 'border-input bg-background'
+        }`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Flag className="h-3.5 w-3.5" />
+        Priority
+        {selected.length > 0 && (
+          <span className="ml-0.5 rounded-full bg-primary/20 px-1 text-[10px] font-bold">{selected.length}</span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute top-full mt-1 left-0 z-30 bg-popover border rounded-md shadow-md p-2 space-y-1 min-w-[170px]">
+          <button className="w-full text-left px-2 py-1.5 text-xs hover:bg-muted rounded" onClick={() => onChange([])}>
+            <CheckSquare2 className="inline h-3.5 w-3.5 mr-1.5" />Clear all
+          </button>
+          <div className="border-t my-1" />
+          {PRIORITY_OPTIONS.map(({ value, label, colorClass }) => (
+            <label key={value} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-muted cursor-pointer">
+              <Checkbox checked={selected.includes(value)} onCheckedChange={() => toggle(value)} className="h-3.5 w-3.5" />
+              <span className={`text-xs font-medium ${colorClass}`}>{label}</span>
+            </label>
+          ))}
+          <button className="w-full text-right px-2 py-1.5 text-xs text-primary hover:underline" onClick={() => setOpen(false)}>Done</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Environment Filter ────────────────────────────────────────────────────
+function EnvFilter({
+  envs,
+  selected,
+  onChange,
+}: {
+  envs: string[]
+  selected: string[]
+  onChange: (v: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  if (envs.length === 0) return null
+  const toggle = (v: string) =>
+    onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v])
+  return (
+    <div className="relative">
+      <button
+        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted ${
+          selected.length > 0 ? 'border-primary bg-primary/5 text-primary' : 'border-input bg-background'
+        }`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Globe className="h-3.5 w-3.5" />
+        Env
+        {selected.length > 0 && (
+          <span className="ml-0.5 rounded-full bg-primary/20 px-1 text-[10px] font-bold">{selected.length}</span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute top-full mt-1 left-0 z-30 bg-popover border rounded-md shadow-md p-2 space-y-1 min-w-[160px]">
+          <button className="w-full text-left px-2 py-1.5 text-xs hover:bg-muted rounded" onClick={() => onChange([])}>
+            <CheckSquare2 className="inline h-3.5 w-3.5 mr-1.5" />Clear all
+          </button>
+          <div className="border-t my-1" />
+          {envs.map((e) => (
+            <label key={e} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-muted cursor-pointer">
+              <Checkbox checked={selected.includes(e)} onCheckedChange={() => toggle(e)} className="h-3.5 w-3.5" />
+              <span className={`text-xs ${/prod/i.test(e) ? 'font-semibold text-red-600' : ''}`}>{e}</span>
+            </label>
+          ))}
+          <button className="w-full text-right px-2 py-1.5 text-xs text-primary hover:underline" onClick={() => setOpen(false)}>Done</button>
+        </div>
+      )}
+    </div>
+  )
+}
 const colHelper = createColumnHelper<Finding>()
 
 export function FindingsTable() {
   const { findings, setSelectedCVE, cveGroups } = useAppStore()
 
-  const [globalFilter, setGlobalFilter] = useState('')
-  const [severityFilter, setSeverityFilter] = useState<Severity[]>([])
-  const [fixStatusFilter, setFixStatusFilter] = useState<FixStatus | 'all'>('all')
-  const [envFilter, setEnvFilter] = useState<string[]>([])
+  const [searchParams, setSearchParams] = useSearchParams()
   const [sorting, setSorting] = useState<SortingState>([{ id: 'riskScore', desc: true }])
+  const [copied, setCopied] = useState(false)
+
+  // Filter values derived from URL search params
+  const globalFilter = searchParams.get('q') ?? ''
+  const severityFilter = useMemo(() => parseList(searchParams.get('sev')) as Severity[], [searchParams])
+  const fixStatusFilter = (searchParams.get('fix') ?? 'all') as FixStatus | 'all'
+  const envFilter = useMemo(() => parseList(searchParams.get('env')), [searchParams])
+  const exploitFilter = useMemo(() => parseList(searchParams.get('exploit')), [searchParams])
+  const priorityFilter = useMemo(() => parseList(searchParams.get('priority')) as RiskPriority[], [searchParams])
+
+  function setParam(key: string, value: string | null) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (!value || value === 'all') next.delete(key)
+      else next.set(key, value)
+      return next
+    }, { replace: true })
+  }
+
+  function setListParam(key: string, values: string[]) {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      if (values.length === 0) next.delete(key)
+      else next.set(key, values.join(','))
+      return next
+    }, { replace: true })
+  }
+
+  function clearFilters() {
+    setSearchParams({}, { replace: true })
+  }
+
+  function copyLink() {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
 
   const environments = useMemo(
     () => Array.from(new Set(findings.map((f) => f.environment).filter(Boolean))) as string[],
@@ -167,12 +346,30 @@ export function FindingsTable() {
   )
 
   const filtered = useMemo(() => {
+    const sev = parseList(searchParams.get('sev')) as Severity[]
+    const fix = (searchParams.get('fix') ?? 'all') as FixStatus | 'all'
+    const env = parseList(searchParams.get('env'))
+    const exploit = parseList(searchParams.get('exploit'))
+    const priority = parseList(searchParams.get('priority')) as RiskPriority[]
+    const q = (searchParams.get('q') ?? '').toLowerCase()
+
     return findings.filter((f) => {
-      if (severityFilter.length > 0 && !severityFilter.includes(f.severity)) return false
-      if (fixStatusFilter !== 'all' && getFixStatus(f) !== fixStatusFilter) return false
-      if (envFilter.length > 0 && (!f.environment || !envFilter.includes(f.environment))) return false
-      if (globalFilter) {
-        const q = globalFilter.toLowerCase()
+      if (sev.length > 0 && !sev.includes(f.severity)) return false
+      if (fix !== 'all' && getFixStatus(f) !== fix) return false
+      if (env.length > 0 && (!f.environment || !env.includes(f.environment))) return false
+      if (exploit.length > 0) {
+        const hasExploit = !!(f.exploitKnown || f.exploitAvailable || f.exploitPoC)
+        const match = exploit.some((ef) => {
+          if (ef === 'kev') return !!f.exploitKnown
+          if (ef === 'exploit') return !!f.exploitAvailable
+          if (ef === 'poc') return !!f.exploitPoC
+          if (ef === 'none') return !hasExploit
+          return false
+        })
+        if (!match) return false
+      }
+      if (priority.length > 0 && (!f.priorityLabel || !priority.includes(f.priorityLabel))) return false
+      if (q) {
         return (
           f.cveId.toLowerCase().includes(q) ||
           (f.assetName ?? '').toLowerCase().includes(q) ||
@@ -182,7 +379,7 @@ export function FindingsTable() {
       }
       return true
     })
-  }, [findings, globalFilter, severityFilter, fixStatusFilter, envFilter])
+  }, [findings, searchParams])
 
   const columns = useMemo<ColumnDef<Finding, unknown>[]>(
     () => [
@@ -357,83 +554,81 @@ export function FindingsTable() {
   const activeFiltersCount =
     (severityFilter.length > 0 ? 1 : 0) +
     (fixStatusFilter !== 'all' ? 1 : 0) +
-    (envFilter.length > 0 ? 1 : 0)
+    (envFilter.length > 0 ? 1 : 0) +
+    (exploitFilter.length > 0 ? 1 : 0) +
+    (priorityFilter.length > 0 ? 1 : 0) +
+    (globalFilter ? 1 : 0)
 
   return (
     <div className="space-y-3">
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* Search */}
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder="Search CVE, asset, package…"
             value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            className="pl-8 h-8 text-xs"
+            onChange={(e) => setParam('q', e.target.value || null)}
+            className="pl-8 pr-7 h-8 text-xs"
           />
+          {globalFilter && (
+            <button
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setParam('q', null)}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
 
-        <SeverityFilter selected={severityFilter} onChange={setSeverityFilter} />
+        <SeverityFilter selected={severityFilter} onChange={(v) => setListParam('sev', v)} />
 
-        {/* Fix Status filter */}
-        <Select
-          value={fixStatusFilter}
-          onValueChange={(v) => setFixStatusFilter(v as FixStatus | 'all')}
-        >
-          <SelectTrigger className="h-8 text-xs w-[140px]">
+        {/* Fix Status */}
+        <Select value={fixStatusFilter} onValueChange={(v) => setParam('fix', v)}>
+          <SelectTrigger className="h-8 text-xs w-[135px]">
             <SelectValue placeholder="Fix Status" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Fix Statuses</SelectItem>
             <SelectItem value="AVAILABLE">Fix Available</SelectItem>
-            <SelectItem value="NONE">No Fix Available</SelectItem>
+            <SelectItem value="NONE">No Fix</SelectItem>
             <SelectItem value="UNKNOWN">Unknown</SelectItem>
           </SelectContent>
         </Select>
 
-        {/* Environment filter */}
-        {environments.length > 0 && (
-          <Select
-            value={envFilter[0] ?? 'all'}
-            onValueChange={(v) => setEnvFilter(v === 'all' ? [] : [v])}
-          >
-            <SelectTrigger className="h-8 text-xs w-[130px]">
-              <SelectValue placeholder="Environment" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Environments</SelectItem>
-              {environments.map((e) => (
-                <SelectItem key={e} value={e}>{e}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <ExploitFilter selected={exploitFilter} onChange={(v) => setListParam('exploit', v)} />
+        <PriorityFilter selected={priorityFilter} onChange={(v) => setListParam('priority', v)} />
+        <EnvFilter envs={environments} selected={envFilter} onChange={(v) => setListParam('env', v)} />
 
-        {/* Clear filters */}
+        {/* Clear all */}
         {activeFiltersCount > 0 && (
           <Button
             variant="ghost"
             size="sm"
             className="h-8 gap-1 text-xs text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              setSeverityFilter([])
-              setFixStatusFilter('all')
-              setEnvFilter([])
-            }}
+            onClick={clearFilters}
           >
             <X className="h-3.5 w-3.5" />
             Clear ({activeFiltersCount})
           </Button>
         )}
 
-        <div className="ml-auto text-xs text-muted-foreground">
-          {filtered.length.toLocaleString()} finding{filtered.length !== 1 ? 's' : ''}
+        <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+          <span>{filtered.length.toLocaleString()} finding{filtered.length !== 1 ? 's' : ''}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            title="Copy shareable link to current filters"
+            onClick={copyLink}
+          >
+            {copied
+              ? <Check className="h-3.5 w-3.5 text-green-600" />
+              : <Link2 className="h-3.5 w-3.5" />}
+          </Button>
         </div>
       </div>
-
-      <p className="text-[11px] text-muted-foreground italic">
-        Findings without a fix are always shown. Use the Fix Status filter above to view them specifically.
-      </p>
 
       {/* Table */}
       <div className="rounded-md border overflow-hidden">

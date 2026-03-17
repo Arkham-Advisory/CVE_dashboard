@@ -1,4 +1,5 @@
 import { Shield, Bug, AlertTriangle, Server, Zap, TrendingUp } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { InfoTooltip } from '@/components/InfoTooltip'
 import { useAppStore } from '@/store/useAppStore'
@@ -11,11 +12,12 @@ interface MetricCardProps {
   description?: string
   valueClassName?: string
   tooltip?: string
+  href?: string
 }
 
-function MetricCard({ title, value, icon, description, valueClassName, tooltip }: MetricCardProps) {
-  return (
-    <Card>
+function MetricCard({ title, value, icon, description, valueClassName, tooltip, href }: MetricCardProps) {
+  const card = (
+    <Card className={href ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium flex items-center gap-1.5">
           {title}
@@ -29,6 +31,8 @@ function MetricCard({ title, value, icon, description, valueClassName, tooltip }
       </CardContent>
     </Card>
   )
+  if (href) return <Link to={href}>{card}</Link>
+  return card
 }
 
 function SecurityScoreCard() {
@@ -74,6 +78,7 @@ export function MetricsCards() {
         value={metrics.totalFindings.toLocaleString()}
         icon={<Bug className="h-4 w-4" />}
         description="Across all uploaded files"
+        href="/findings"
       />
       <MetricCard
         title="Unique CVEs"
@@ -89,6 +94,7 @@ export function MetricsCards() {
         valueClassName={metrics.criticalFindings > 0 ? 'text-red-600' : ''}
         description="Critical severity findings"
         tooltip={CONCEPT_TOOLTIPS['Severity']}
+        href="/findings?sev=CRITICAL"
       />
       <MetricCard
         title="Exploitable"
@@ -97,6 +103,7 @@ export function MetricsCards() {
         valueClassName={metrics.exploitableFindings > 0 ? 'text-orange-600' : ''}
         description="Active or public exploits"
         tooltip={CONCEPT_TOOLTIPS['Exploitability']}
+        href="/findings?exploit=kev,exploit,poc"
       />
       <MetricCard
         title="Affected Assets"
