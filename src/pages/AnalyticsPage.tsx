@@ -52,7 +52,7 @@ import type {
 
 const DIMENSION_LABELS: Record<DimensionKey, string> = {
   severity: 'Severity',
-  account: 'AWS Account',
+  account: 'Account',
   region: 'AWS Region',
   packageName: 'Package',
   assetType: 'Asset Type',
@@ -60,6 +60,7 @@ const DIMENSION_LABELS: Record<DimensionKey, string> = {
   sourceFile: 'Source File',
   cveYear: 'CVE Year',
   cveId: 'CVE ID',
+  sla: 'SLA / Due Date',
 }
 
 const METRIC_LABELS: Record<MetricKey, string> = {
@@ -88,7 +89,7 @@ const PALETTE = [
 function getDimensionValue(f: Finding, dim: DimensionKey): string {
   switch (dim) {
     case 'severity': return f.severity
-    case 'account': return f.account ?? '(none)'
+    case 'account': return f.accountName ?? f.account ?? '(none)'
     case 'region': return f.region ?? '(none)'
     case 'packageName': return f.packageName ?? '(none)'
     case 'assetType': return f.assetType ?? '(none)'
@@ -96,6 +97,13 @@ function getDimensionValue(f: Finding, dim: DimensionKey): string {
     case 'sourceFile': return f.sourceFile
     case 'cveYear': return f.cveId.split('-')[1] ?? '(unknown)'
     case 'cveId': return f.cveId
+    case 'sla': {
+      if (!f.sla) return '(no SLA)'
+      const d = new Date(f.sla)
+      if (isNaN(d.getTime())) return f.sla
+      // Bucket into month periods for grouping
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    }
     default: return '(none)'
   }
 }

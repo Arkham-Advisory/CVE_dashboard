@@ -108,14 +108,25 @@ export function FindingsTable() {
   const [cveSearch, setCveSearch] = useState('')
   const [pkgSearch, setPkgSearch] = useState('')
 
-  const distinctAccounts = useDistinct(findings, 'account')
+  const distinctAccounts = useMemo(() => {
+    // Show accountName labels when available, falling back to account IDs
+    const values = new Set<string>()
+    for (const f of findings) {
+      const label = f.accountName ?? f.account
+      if (label) values.add(label)
+    }
+    return Array.from(values).sort()
+  }, [findings])
   const distinctRegions = useDistinct(findings, 'region')
   const distinctAssetTypes = useDistinct(findings, 'assetType')
 
   const filteredFindings = useMemo(() => {
     return findings.filter((f) => {
       if (severities.length > 0 && !severities.includes(f.severity)) return false
-      if (accounts.length > 0 && !accounts.includes(f.account ?? '')) return false
+      if (accounts.length > 0) {
+        const label = f.accountName ?? f.account ?? ''
+        if (!accounts.includes(label)) return false
+      }
       if (regions.length > 0 && !regions.includes(f.region ?? '')) return false
       if (assetTypes.length > 0 && !assetTypes.includes(f.assetType ?? '')) return false
       if (hasFix && !f.fixedVersion) return false
@@ -231,15 +242,46 @@ export function FindingsTable() {
       }),
       columnHelper.accessor('account', {
         header: 'Account',
-        cell: (info) => (
-          <span className="text-xs text-muted-foreground">{info.getValue() ?? '—'}</span>
-        ),
+        cell: (info) => {
+          const f = info.row.original
+          const displayName = f.accountName ?? f.account
+          const titleText = f.accountName ? f.account : undefined // show raw ID on hover only when label is shown
+          return displayName ? (
+            <span className="text-xs text-muted-foreground" title={titleText}>
+              {displayName}
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          )
+        },
       }),
       columnHelper.accessor('region', {
         header: 'Region',
         cell: (info) => (
           <span className="text-xs text-muted-foreground">{info.getValue() ?? '—'}</span>
         ),
+      }),
+      columnHelper.accessor('sla', {
+        id: 'sla',
+        header: 'SLA / Due',
+        cell: (info) => {
+          const val = info.getValue()
+          if (!val) return <span className="text-xs text-muted-foreground">—</span>
+          // Attempt to parse as date for colour coding
+          const date = new Date(val)
+          const isDate = !isNaN(date.getTime())
+          const isBreached = isDate && date < new Date()
+          return (
+            <span
+              className={`text-xs font-mono ${
+                isBreached ? 'text-destructive font-semibold' : 'text-muted-foreground'
+              }`}
+              title={isDate ? date.toLocaleDateString() : undefined}
+            >
+              {isDate ? date.toLocaleDateString() : val}
+            </span>
+          )
+        },
       }),
     ],
     [cveGroups, setSelectedCVE],

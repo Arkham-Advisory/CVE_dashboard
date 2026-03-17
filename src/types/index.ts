@@ -10,9 +10,11 @@ export interface Finding {
   packageName?: string
   installedVersion?: string
   fixedVersion?: string
-  account?: string
+  account?: string       // Account ID / identifier
+  accountName?: string   // Human-readable account label / alias
   region?: string
   description?: string
+  sla?: string           // SLA due date or remediation deadline
   sourceFile: string
   raw: Record<string, unknown>
 }
@@ -46,8 +48,10 @@ export interface ColumnMapping {
   installedVersion?: string
   fixedVersion?: string
   account?: string
+  accountName?: string
   region?: string
   description?: string
+  sla?: string
 }
 
 export interface Upload {
@@ -58,6 +62,7 @@ export interface Upload {
   uploadedAt: Date
   columns: string[]
   mapping: ColumnMapping
+  rawRows: Record<string, unknown>[]  // retained for post-upload column remapping
 }
 
 // ── NVD / CVE enrichment ────────────────────────────────────────────────────
@@ -96,6 +101,7 @@ export type DimensionKey =
   | 'sourceFile'
   | 'cveYear'
   | 'cveId'
+  | 'sla'
 
 export type MetricKey = 'findings' | 'uniqueCVEs' | 'affectedAssets' | 'fixableFindings'
 

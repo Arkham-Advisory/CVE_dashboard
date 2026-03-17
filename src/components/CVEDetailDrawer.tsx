@@ -216,7 +216,9 @@ export function CVEDetailDrawer() {
                       <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground">Package</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground">Installed</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground">Fixed</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground">Account</th>
                       <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground">Region</th>
+                      <th className="text-left px-3 py-2 font-medium text-xs text-muted-foreground">SLA</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -258,8 +260,27 @@ export function CVEDetailDrawer() {
                           <td className="px-3 py-2 font-mono text-xs text-green-600 font-medium">
                             {f.fixedVersion ?? <span className="text-muted-foreground font-normal">—</span>}
                           </td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground" title={f.account}>
+                            {f.accountName ?? f.account ?? '—'}
+                          </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground">
                             {f.region ?? arnParsed?.region ?? '—'}
+                          </td>
+                          <td className="px-3 py-2 text-xs">
+                            {f.sla ? (
+                              (() => {
+                                const d = new Date(f.sla)
+                                const isDate = !isNaN(d.getTime())
+                                const breached = isDate && d < new Date()
+                                return (
+                                  <span className={breached ? 'text-destructive font-semibold' : 'text-muted-foreground'}>
+                                    {isDate ? d.toLocaleDateString() : f.sla}
+                                  </span>
+                                )
+                              })()
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </td>
                         </tr>
                       )
@@ -296,11 +317,15 @@ export function CVEDetailDrawer() {
                             {arnParsed.region || 'global'}
                           </span>
                         )}
-                        {finding?.account && (
+                        {finding?.accountName ? (
+                          <Badge variant="outline" className="text-[10px]" title={finding.account}>
+                            {finding.accountName}
+                          </Badge>
+                        ) : finding?.account ? (
                           <Badge variant="outline" className="text-[10px]">
                             {finding.account}
                           </Badge>
-                        )}
+                        ) : null}
                       </div>
                     )
                   })}

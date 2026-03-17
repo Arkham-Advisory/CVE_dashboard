@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Finding, CVEGroup, DashboardMetrics, Upload, ColumnMapping, Severity } from '@/types'
+import { rowsToFindings } from '@/lib/parser'
 
 interface AppState {
   uploads: Upload[]
@@ -14,6 +15,7 @@ interface AppState {
   clearAll: () => void
   setSelectedCVE: (cve: CVEGroup | null) => void
   updateColumnMapping: (mapping: ColumnMapping) => void
+  remapUpload: (uploadId: string, newMapping: ColumnMapping) => void
 }
 
 const SEVERITY_ORDER: Record<Severity, number> = {
@@ -159,4 +161,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setSelectedCVE: (cve) => set({ selectedCVE: cve }),
 
   updateColumnMapping: (mapping) => set({ columnMapping: mapping }),
+
+  remapUpload: (uploadId, newMapping) => {
+    const { uploads, findings } = get()
+    const upload = uploads.find((u) => u.id === uploadId)
+    if (!upload) return
+
+    // Replace findings from this source with freshly derived ones
+    const otherFindings = findings.filter((f) => f.sourceFile !== upload.fileName)
+    const remapped = rowsToFindings(upload.rawRows, newMapping, upload.fileName)
+    const allFindings = [...otherFindings, ...remapped]
+
+    set({
+      uploads: uploads.map((u) => (u.id === uploadId ? { ...u, mapping: newMapping } : u)),
+      findings: allFindings,
+      cveGroups: groupByCVE(allFindings),
+      metrics: computeMetrics(allFindings),
+    })
+  },
 }))
