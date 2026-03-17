@@ -14,6 +14,7 @@ import { SeverityBadge } from '@/components/SeverityBadge'
 import { PriorityBadge } from '@/components/PriorityBadge'
 import { FixStatusBadge } from '@/components/FixStatusBadge'
 import { Separator } from '@/components/ui/separator'
+import { CVEDetailDrawer } from '@/components/CVEDetailDrawer'
 import { useAppStore } from '@/store/useAppStore'
 import type { Severity } from '@/types'
 import { SEVERITY_ORDER } from '@/types'
@@ -28,7 +29,7 @@ const SEVERITY_COLORS: Record<Severity, string> = {
 }
 
 export function ReportPage() {
-  const { findings, metrics, cveGroups, uploads } = useAppStore()
+  const { findings, metrics, cveGroups, uploads, setSelectedCVE } = useAppStore()
 
   if (findings.length === 0) {
     return (
@@ -54,6 +55,7 @@ export function ReportPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-10 py-6">
+      <CVEDetailDrawer />
       {/* Header */}
       <div className="border-b pb-6">
         <div className="flex items-start justify-between">
@@ -170,7 +172,14 @@ export function ReportPage() {
                 const hasNoFixFindings = group?.findings.some((f) => !f.fixedVersion)
                 return (
                   <tr key={cveId} className={`border-t ${i % 2 ? 'bg-muted/10' : ''}`}>
-                    <td className="px-4 py-2 font-mono text-xs font-medium">{cveId}</td>
+                    <td className="px-4 py-2 font-mono text-xs font-medium">
+                      <button
+                        className="hover:underline text-primary"
+                        onClick={() => group && setSelectedCVE(group)}
+                      >
+                        {cveId}
+                      </button>
+                    </td>
                     <td className="px-4 py-2">
                       <SeverityBadge severity={severity} />
                     </td>
@@ -246,11 +255,19 @@ export function ReportPage() {
             </thead>
             <tbody>
               {cveGroups.map(({ cveId, severity, findings: cveFindings, affectedAssets, packages }, i) => {
+                const group = cveGroups.find((g) => g.cveId === cveId)
                 const hasFixableFindings = cveFindings.some((f) => !!f.fixedVersion)
                 const hasNoFixFindings = cveFindings.some((f) => !f.fixedVersion)
                 return (
                   <tr key={cveId} className={`border-t ${i % 2 ? 'bg-muted/10' : ''}`}>
-                    <td className="px-4 py-2 font-mono text-xs font-medium">{cveId}</td>
+                    <td className="px-4 py-2 font-mono text-xs font-medium">
+                      <button
+                        className="hover:underline text-primary"
+                        onClick={() => group && setSelectedCVE(group)}
+                      >
+                        {cveId}
+                      </button>
+                    </td>
                     <td className="px-4 py-2">
                       <SeverityBadge severity={severity} />
                     </td>

@@ -166,7 +166,7 @@ export function CVEDetailDrawer() {
       <div className="flex-1 bg-black/40" onClick={() => setSelectedCVE(null)} />
 
       {/* Drawer */}
-      <div className="w-full max-w-4xl bg-background border-l shadow-xl flex flex-col">
+      <div className="w-full max-w-4xl bg-background border-l shadow-xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-start justify-between p-6 border-b gap-4">
           <div className="space-y-1.5 flex-1 min-w-0">
@@ -199,7 +199,7 @@ export function CVEDetailDrawer() {
         </div>
 
         <ScrollArea className="flex-1">
-          <div className="p-6 space-y-6">
+          <div className="p-6 space-y-6 min-w-0">
             {/* Exploit Intelligence Flags */}
             {(exploitInfo.known || exploitInfo.available || exploitInfo.poc) && (
               <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 space-y-2">
@@ -372,7 +372,7 @@ export function CVEDetailDrawer() {
                 <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                   <GitBranch className="h-4 w-4" /> Dependency Chain
                 </h3>
-                <div className="rounded-md border overflow-hidden">
+                <div className="rounded-md border overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead className="bg-muted/50">
                       <tr>
@@ -428,7 +428,7 @@ export function CVEDetailDrawer() {
             {/* Findings Table */}
             <div>
               <h3 className="text-sm font-semibold mb-3">Findings Detail</h3>
-              <div className="rounded-md border overflow-hidden">
+              <div className="rounded-md border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50">
                     <tr>

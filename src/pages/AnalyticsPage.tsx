@@ -12,6 +12,9 @@ import {
   PieChart,
   Pie,
   Legend,
+  ScatterChart,
+  Scatter,
+  ZAxis,
 } from 'recharts'
 import {
   BarChart2,
@@ -37,7 +40,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { CVSSBubbleChart } from '@/components/CVSSBubbleChart'
 import { useAppStore } from '@/store/useAppStore'
 import { useAnalyticsStore } from '@/store/useAnalyticsStore'
 import type {
@@ -373,6 +375,90 @@ function AnalyticsPieChart({
   )
 }
 
+// ── Analytics Scatter (Bubble) Chart ─────────────────────────────────────────
+
+function AnalyticsScatterChart({
+  data,
+  xMetric,
+  yMetric,
+  sizeMetric,
+  groupBy,
+}: {
+  data: AggregatedRow[]
+  xMetric: MetricKey
+  yMetric: MetricKey
+  sizeMetric: MetricKey
+  groupBy: DimensionKey
+}) {
+  const isSeverityGroup = groupBy === 'severity'
+  const scatterData = data.map((row, i) => ({
+    ...row,
+    xVal: row[xMetric],
+    yVal: row[yMetric],
+    zVal: Math.max(row[sizeMetric], 1),
+    fill: isSeverityGroup
+      ? SEVERITY_COLORS[row.group as Severity] ?? PALETTE[i % PALETTE.length]
+      : PALETTE[i % PALETTE.length],
+  }))
+
+  if (data.length === 0) {
+    return <p className="text-sm text-muted-foreground text-center py-12">No data</p>
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={340}>
+      <ScatterChart margin={{ top: 20, right: 30, left: 10, bottom: 35 }}>
+        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+        <XAxis
+          type="number"
+          dataKey="xVal"
+          name={METRIC_LABELS[xMetric]}
+          tick={{ fontSize: 11 }}
+          tickLine={false}
+          axisLine={false}
+          label={{ value: METRIC_LABELS[xMetric], position: 'insideBottom', offset: -25, fontSize: 11 }}
+        />
+        <YAxis
+          type="number"
+          dataKey="yVal"
+          name={METRIC_LABELS[yMetric]}
+          tick={{ fontSize: 11 }}
+          tickLine={false}
+          axisLine={false}
+          label={{ value: METRIC_LABELS[yMetric], angle: -90, position: 'insideLeft', offset: 12, fontSize: 11 }}
+        />
+        <ZAxis type="number" dataKey="zVal" range={[50, 1200]} name={METRIC_LABELS[sizeMetric]} />
+        <ReChartsTooltip
+          cursor={{ strokeDasharray: '3 3' }}
+          content={({ active, payload }) => {
+            if (!active || !payload?.length) return null
+            const d = payload[0].payload as AggregatedRow & { xVal: number; yVal: number; zVal: number }
+            return (
+              <div className="rounded border bg-background p-2 shadow-lg text-xs space-y-1">
+                <div className="font-semibold">{d.group}</div>
+                <div className="text-muted-foreground">
+                  {METRIC_LABELS[xMetric]}: <span className="text-foreground font-medium">{d.xVal}</span>
+                </div>
+                <div className="text-muted-foreground">
+                  {METRIC_LABELS[yMetric]}: <span className="text-foreground font-medium">{d.yVal}</span>
+                </div>
+                <div className="text-muted-foreground">
+                  {METRIC_LABELS[sizeMetric]} (size): <span className="text-foreground font-medium">{d.zVal}</span>
+                </div>
+              </div>
+            )
+          }}
+        />
+        <Scatter data={scatterData}>
+          {scatterData.map((entry, index) => (
+            <Cell key={`cell-${index}`} fill={entry.fill} fillOpacity={0.75} />
+          ))}
+        </Scatter>
+      </ScatterChart>
+    </ResponsiveContainer>
+  )
+}
+
 // ── Preset Panel ─────────────────────────────────────────────────────────────
 
 function PresetPanel() {
@@ -587,9 +673,43 @@ export function AnalyticsPage() {
                 </div>
               )}
 
-              {/* Metric */}
+              {/* Scatter X / Y Axis (scatter only) */}
+              {config.chartType === 'scatter' && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">X Axis</Label>
+                    <Select
+                      value={config.scatterX ?? 'uniqueCVEs'}
+                      onValueChange={(v) => updateConfig({ scatterX: v as MetricKey })}
+                    >
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {(Object.entries(METRIC_LABELS) as [MetricKey, string][]).map(([key, label]) => (
+                          <SelectItem key={key} value={key} className="text-xs">{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Y Axis</Label>
+                    <Select
+                      value={config.scatterY ?? 'affectedAssets'}
+                      onValueChange={(v) => updateConfig({ scatterY: v as MetricKey })}
+                    >
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {(Object.entries(METRIC_LABELS) as [MetricKey, string][]).map(([key, label]) => (
+                          <SelectItem key={key} value={key} className="text-xs">{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              {/* Metric / Bubble Size */}
               <div className="space-y-1.5">
-                <Label className="text-xs">Metric</Label>
+                <Label className="text-xs">{config.chartType === 'scatter' ? 'Bubble Size' : 'Metric'}</Label>
                 <Select
                   value={config.metric}
                   onValueChange={(v) => updateConfig({ metric: v as MetricKey })}
@@ -650,8 +770,10 @@ export function AnalyticsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                {METRIC_LABELS[config.metric]} by {DIMENSION_LABELS[config.groupBy]}
-                {config.stackBy && ` · Stacked by ${DIMENSION_LABELS[config.stackBy]}`}
+                {config.chartType === 'scatter'
+                  ? `${METRIC_LABELS[config.scatterX ?? 'uniqueCVEs']} vs ${METRIC_LABELS[config.scatterY ?? 'affectedAssets']} by ${DIMENSION_LABELS[config.groupBy]}`
+                  : `${METRIC_LABELS[config.metric]} by ${DIMENSION_LABELS[config.groupBy]}${config.stackBy ? ` · Stacked by ${DIMENSION_LABELS[config.stackBy]}` : ''}`
+                }
                 <Badge variant="outline" className="ml-2 text-xs font-normal">
                   {aggregated.length} groups
                 </Badge>
@@ -673,7 +795,15 @@ export function AnalyticsPage() {
                   groupBy={config.groupBy}
                 />
               )}
-              {config.chartType === 'scatter' && <CVSSBubbleChart />}
+              {config.chartType === 'scatter' && (
+                <AnalyticsScatterChart
+                  data={aggregated}
+                  xMetric={config.scatterX ?? 'uniqueCVEs'}
+                  yMetric={config.scatterY ?? 'affectedAssets'}
+                  sizeMetric={config.metric}
+                  groupBy={config.groupBy}
+                />
+              )}
             </CardContent>
           </Card>
 

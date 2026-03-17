@@ -294,6 +294,54 @@ function EnvFilter({
     </div>
   )
 }
+
+// ── Generic Multi-Select Filter (for any distinct-value field) ──────────────────
+function GenericMultiFilter({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string
+  options: string[]
+  selected: string[]
+  onChange: (v: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  if (options.length === 0) return null
+  const toggle = (v: string) =>
+    onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v])
+  return (
+    <div className="relative">
+      <button
+        className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted ${
+          selected.length > 0 ? 'border-primary bg-primary/5 text-primary' : 'border-input bg-background'
+        }`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {label}
+        {selected.length > 0 && (
+          <span className="ml-0.5 rounded-full bg-primary/20 px-1 text-[10px] font-bold">{selected.length}</span>
+        )}
+      </button>
+      {open && (
+        <div className="absolute top-full mt-1 left-0 z-30 bg-popover border rounded-md shadow-md p-2 space-y-1 min-w-[160px] max-h-64 overflow-y-auto">
+          <button className="w-full text-left px-2 py-1.5 text-xs hover:bg-muted rounded" onClick={() => onChange([])}>
+            <CheckSquare2 className="inline h-3.5 w-3.5 mr-1.5" />Clear all
+          </button>
+          <div className="border-t my-1" />
+          {options.map((opt) => (
+            <label key={opt} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-muted cursor-pointer">
+              <Checkbox checked={selected.includes(opt)} onCheckedChange={() => toggle(opt)} className="h-3.5 w-3.5" />
+              <span className="text-xs">{opt}</span>
+            </label>
+          ))}
+          <button className="w-full text-right px-2 py-1.5 text-xs text-primary hover:underline" onClick={() => setOpen(false)}>Done</button>
+        </div>
+      )}
+    </div>
+  )
+}
 const colHelper = createColumnHelper<Finding>()
 
 export function FindingsTable() {
@@ -345,6 +393,17 @@ export function FindingsTable() {
     [findings],
   )
 
+  const treatments = useMemo(
+    () => Array.from(new Set(findings.map((f) => f.treatment).filter(Boolean))).sort() as string[],
+    [findings],
+  )
+  const findingTypes = useMemo(
+    () => Array.from(new Set(findings.map((f) => f.findingType).filter(Boolean))).sort() as string[],
+    [findings],
+  )
+  const treatmentFilter = useMemo(() => parseList(searchParams.get('treatment')), [searchParams])
+  const findingTypeFilter = useMemo(() => parseList(searchParams.get('ftype')), [searchParams])
+
   const filtered = useMemo(() => {
     const sev = parseList(searchParams.get('sev')) as Severity[]
     const fix = (searchParams.get('fix') ?? 'all') as FixStatus | 'all'
@@ -353,10 +412,15 @@ export function FindingsTable() {
     const priority = parseList(searchParams.get('priority')) as RiskPriority[]
     const q = (searchParams.get('q') ?? '').toLowerCase()
 
-    return findings.filter((f) => {
+      const treatment = parseList(searchParams.get('treatment'))
+      const ftype = parseList(searchParams.get('ftype'))
+
+      return findings.filter((f) => {
       if (sev.length > 0 && !sev.includes(f.severity)) return false
       if (fix !== 'all' && getFixStatus(f) !== fix) return false
       if (env.length > 0 && (!f.environment || !env.includes(f.environment))) return false
+      if (treatment.length > 0 && (!f.treatment || !treatment.includes(f.treatment))) return false
+      if (ftype.length > 0 && (!f.findingType || !ftype.includes(f.findingType))) return false
       if (exploit.length > 0) {
         const hasExploit = !!(f.exploitKnown || f.exploitAvailable || f.exploitPoC)
         const match = exploit.some((ef) => {
@@ -465,10 +529,10 @@ export function FindingsTable() {
               </div>
               {f.environment && (
                 <span
-                  className={`text-[10px] font-medium rounded px-1 py-0.5 ${
+                  className={`text-[10px] font-medium rounded px-1 py-0.5 border inline-block ${
                     /prod/i.test(f.environment)
-                      ? 'bg-red-100 text-red-700 border border-red-200'
-                      : 'text-muted-foreground italic'
+                      ? 'bg-red-100 text-red-700 border-red-200'
+                      : 'bg-muted/50 text-muted-foreground border-border'
                   }`}
                 >
                   {f.environment}
@@ -557,6 +621,8 @@ export function FindingsTable() {
     (envFilter.length > 0 ? 1 : 0) +
     (exploitFilter.length > 0 ? 1 : 0) +
     (priorityFilter.length > 0 ? 1 : 0) +
+    (treatmentFilter.length > 0 ? 1 : 0) +
+    (findingTypeFilter.length > 0 ? 1 : 0) +
     (globalFilter ? 1 : 0)
 
   return (
@@ -600,6 +666,18 @@ export function FindingsTable() {
         <ExploitFilter selected={exploitFilter} onChange={(v) => setListParam('exploit', v)} />
         <PriorityFilter selected={priorityFilter} onChange={(v) => setListParam('priority', v)} />
         <EnvFilter envs={environments} selected={envFilter} onChange={(v) => setListParam('env', v)} />
+        <GenericMultiFilter
+          label="Treatment"
+          options={treatments}
+          selected={treatmentFilter}
+          onChange={(v) => setListParam('treatment', v)}
+        />
+        <GenericMultiFilter
+          label="Type"
+          options={findingTypes}
+          selected={findingTypeFilter}
+          onChange={(v) => setListParam('ftype', v)}
+        />
 
         {/* Clear all */}
         {activeFiltersCount > 0 && (
