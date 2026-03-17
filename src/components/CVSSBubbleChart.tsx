@@ -27,6 +27,7 @@ import { useAppStore } from '@/store/useAppStore'
 import { useCVEDataStore } from '@/store/useCVEDataStore'
 import { estimateCVSS } from '@/lib/cveApi'
 import type { Severity } from '@/types'
+import { ORDERED_SEVERITIES } from '@/types'
 
 // ── CVSS axis options ─────────────────────────────────────────────────────────
 
@@ -59,7 +60,7 @@ const SEVERITY_COLORS: Record<Severity, string> = {
   UNKNOWN: '#9ca3af',
 }
 
-const ALL_SEVERITIES: Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']
+const ALL_SEVERITIES: Severity[] = ORDERED_SEVERITIES.filter((s) => s !== 'NONE')
 
 // ── Estimate sub-scores from base when NVD isn't available ───────────────────
 

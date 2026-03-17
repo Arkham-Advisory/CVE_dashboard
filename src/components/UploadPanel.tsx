@@ -1,78 +1,156 @@
-import { useCallback, useState } from 'react'
-import { Upload, FileSpreadsheet, AlertCircle, Settings } from 'lucide-react'
+import { useCallback, useState, useRef } from 'react'
+import { Upload, FileSpreadsheet, Settings, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAppStore } from '@/store/useAppStore'
-import { parseFileRaw, detectColumnsFromRows, rowsToFindings } from '@/lib/parser'
+import {
+  parseFileRawWithProgress,
+  detectColumnsFromRows,
+  rowsToFindingsAsync,
+} from '@/lib/parser'
 import { ColumnMappingModal } from '@/components/ColumnMappingModal'
 import type { ColumnMapping, Upload as UploadType } from '@/types'
 
-interface PendingFile {
+// ── Per-file tracking ─────────────────────────────────────────────────────────
+
+type FileStatus = 'reading' | 'processing' | 'ready' | 'error'
+
+interface FileState {
+  key: string
   fileName: string
   fileSize: number
-  rows: Record<string, unknown>[]
-  headers: string[]
-  detectedMapping: ColumnMapping
+  status: FileStatus
+  progress: number   // 0-100
+  phase: string
+  error?: string
+  // Populated once parsing completes:
+  rows?: Record<string, unknown>[]
+  headers?: string[]
+  detectedMapping?: ColumnMapping
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function StatusIcon({ status }: { status: FileStatus }) {
+  if (status === 'ready') return <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+  if (status === 'error') return <XCircle className="h-3.5 w-3.5 text-destructive shrink-0" />
+  return <Loader2 className="h-3.5 w-3.5 text-primary animate-spin shrink-0" />
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 export function UploadPanel() {
   const [dragging, setDragging] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
+  const [processingFiles, setProcessingFiles] = useState<FileState[]>([])
+  const [pendingQueue, setPendingQueue] = useState<FileState[]>([])  // ready → awaiting mapping
   const [remapTarget, setRemapTarget] = useState<UploadType | null>(null)
   const { addFindings, uploads, clearAll, remapUpload } = useAppStore()
+  const processingRef = useRef(new Set<string>()) // prevent double-processing
 
-  // --- Parse files into pending queue (no findings committed yet) ---
-  const processFiles = useCallback(
-    async (files: File[]) => {
-      setLoading(true)
-      setError(null)
+  // Update a single file's state by key
+  const updateFile = useCallback((key: string, patch: Partial<FileState>) => {
+    setProcessingFiles((prev) =>
+      prev.map((f) => (f.key === key ? { ...f, ...patch } : f)),
+    )
+  }, [])
+
+  // Process a single File object asynchronously (non-blocking)
+  const processOneFile = useCallback(
+    async (file: File) => {
+      const key = `${file.name}-${Date.now()}-${Math.random()}`
+      if (processingRef.current.has(key)) return
+      processingRef.current.add(key)
+
+      const initial: FileState = {
+        key,
+        fileName: file.name,
+        fileSize: file.size,
+        status: 'reading',
+        progress: 0,
+        phase: 'Starting…',
+      }
+      setProcessingFiles((prev) => [...prev, initial])
+
       try {
-        const pending: PendingFile[] = []
-        for (const file of files) {
-          const { rows, headers } = await parseFileRaw(file)
-          const detectedMapping = detectColumnsFromRows(headers, rows)
-          pending.push({ fileName: file.name, fileSize: file.size, rows, headers, detectedMapping })
-        }
-        setPendingFiles((prev) => [...prev, ...pending])
+        // Phase 1: read + detect columns (0-50%)
+        const { rows, headers } = await parseFileRawWithProgress(file, (pct, phase) => {
+          updateFile(key, { progress: pct, phase, status: 'reading' })
+        })
+
+        updateFile(key, { progress: 50, phase: 'Detecting columns…', status: 'reading' })
+        const detectedMapping = detectColumnsFromRows(headers, rows)
+
+        // Phase 2: convert rows to findings (50-100%)
+        updateFile(key, { progress: 52, phase: 'Processing rows…', status: 'processing' })
+        // We don't commit the findings yet — just pre-process so the modal can apply mapping
+        // Run rowsToFindingsAsync for progress reporting; we'll redo with user's mapping later
+        await rowsToFindingsAsync(rows, detectedMapping, file.name, (pct, phase) => {
+          updateFile(key, { progress: pct, phase, status: 'processing' })
+        })
+
+        updateFile(key, { progress: 100, phase: 'Ready', status: 'ready', rows, headers, detectedMapping })
+
+        // Enqueue for column mapping confirmation
+        setProcessingFiles((prev) => prev.filter((f) => f.key !== key))
+        setPendingQueue((prev) => [
+          ...prev,
+          { key, fileName: file.name, fileSize: file.size, status: 'ready', progress: 100, phase: 'Ready', rows, headers, detectedMapping },
+        ])
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to parse file')
+        updateFile(key, {
+          status: 'error',
+          progress: 0,
+          phase: 'Failed',
+          error: e instanceof Error ? e.message : 'Parse error',
+        })
       } finally {
-        setLoading(false)
+        processingRef.current.delete(key)
       }
     },
-    [],
+    [updateFile],
+  )
+
+  const handleFiles = useCallback(
+    (files: File[]) => {
+      const valid = files.filter(
+        (f) => f.name.endsWith('.csv') || f.name.endsWith('.xlsx') || f.name.endsWith('.xls'),
+      )
+      // Fire all off in parallel — each updates its own slice of state
+      valid.forEach((f) => processOneFile(f))
+    },
+    [processOneFile],
   )
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault()
       setDragging(false)
-      const files = Array.from(e.dataTransfer.files).filter(
-        (f) => f.name.endsWith('.csv') || f.name.endsWith('.xlsx') || f.name.endsWith('.xls'),
-      )
-      if (files.length > 0) processFiles(files)
+      handleFiles(Array.from(e.dataTransfer.files))
     },
-    [processFiles],
+    [handleFiles],
   )
 
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files ?? [])
-      if (files.length > 0) processFiles(files)
+      handleFiles(Array.from(e.target.files ?? []))
       e.target.value = ''
     },
-    [processFiles],
+    [handleFiles],
   )
 
   // --- Column mapping modal: apply & import ---
   const handleApplyNewMapping = useCallback(
-    (adjustedMapping: ColumnMapping) => {
-      const pending = pendingFiles[0]
-      if (!pending) return
+    async (adjustedMapping: ColumnMapping) => {
+      const pending = pendingQueue[0]
+      if (!pending || !pending.rows || !pending.headers) return
 
-      const findings = rowsToFindings(pending.rows, adjustedMapping, pending.fileName)
+      const findings = await rowsToFindingsAsync(pending.rows, adjustedMapping, pending.fileName, () => {})
       const upload: UploadType = {
         id: `${pending.fileName}-${Date.now()}`,
         fileName: pending.fileName,
@@ -84,16 +162,15 @@ export function UploadPanel() {
         rawRows: pending.rows,
       }
       addFindings(findings, upload)
-      setPendingFiles((prev) => prev.slice(1)) // advance queue
+      setPendingQueue((prev) => prev.slice(1))
     },
-    [pendingFiles, addFindings],
+    [pendingQueue, addFindings],
   )
 
   const handleSkipNewFile = useCallback(() => {
-    setPendingFiles((prev) => prev.slice(1))
+    setPendingQueue((prev) => prev.slice(1))
   }, [])
 
-  // --- Column mapping modal: remap existing upload ---
   const handleApplyRemap = useCallback(
     (newMapping: ColumnMapping) => {
       if (!remapTarget) return
@@ -103,7 +180,11 @@ export function UploadPanel() {
     [remapTarget, remapUpload],
   )
 
-  const activePending = pendingFiles[0]
+  const dismissError = (key: string) =>
+    setProcessingFiles((prev) => prev.filter((f) => f.key !== key))
+
+  const activePending = pendingQueue[0]
+  const hasActivity = processingFiles.length > 0 || pendingQueue.length > 0
 
   return (
     <>
@@ -140,16 +221,55 @@ export function UploadPanel() {
                 onChange={handleFileChange}
               />
               <Button variant="outline" size="sm" asChild>
-                <span>{loading ? 'Processing...' : 'Select Files'}</span>
+                <span>Select Files</span>
               </Button>
             </label>
           </div>
 
-          {error && (
-            <div className="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              {error}
+          {/* Per-file progress / error rows */}
+          {(processingFiles.length > 0 || (pendingQueue.length > 0 && !activePending)) && (
+            <div className="space-y-2">
+              {processingFiles.map((f) => (
+                <div key={f.key} className="rounded-md border px-3 py-2 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <StatusIcon status={f.status} />
+                    <span className="text-sm font-medium truncate flex-1">{f.fileName}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {formatBytes(f.fileSize)}
+                    </span>
+                    {f.status === 'error' && (
+                      <button
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => dismissError(f.key)}
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  {f.status !== 'error' ? (
+                    <div className="space-y-1">
+                      {/* Progress bar */}
+                      <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all duration-300"
+                          style={{ width: `${f.progress}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">{f.phase}</p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-destructive">{f.error}</p>
+                  )}
+                </div>
+              ))}
             </div>
+          )}
+
+          {/* Awaiting mapping confirmation indicator */}
+          {pendingQueue.length > 1 && (
+            <p className="text-xs text-muted-foreground">
+              {pendingQueue.length} file{pendingQueue.length > 1 ? 's' : ''} ready — review mapping one by one
+            </p>
           )}
 
           {/* Uploaded Files List */}
@@ -159,14 +279,16 @@ export function UploadPanel() {
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                   Loaded Files
                 </p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-muted-foreground"
-                  onClick={clearAll}
-                >
-                  Clear All
-                </Button>
+                {!hasActivity && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-muted-foreground"
+                    onClick={clearAll}
+                  >
+                    Clear All
+                  </Button>
+                )}
               </div>
               {uploads.map((u) => (
                 <div
@@ -203,9 +325,9 @@ export function UploadPanel() {
         <ColumnMappingModal
           open={true}
           fileName={activePending.fileName}
-          columns={activePending.headers}
-          sampleRows={activePending.rows}
-          initialMapping={activePending.detectedMapping}
+          columns={activePending.headers ?? []}
+          sampleRows={activePending.rows ?? []}
+          initialMapping={activePending.detectedMapping ?? {}}
           onApply={handleApplyNewMapping}
           onCancel={handleSkipNewFile}
         />

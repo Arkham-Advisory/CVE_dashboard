@@ -11,6 +11,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAppStore } from '@/store/useAppStore'
 import type { Severity } from '@/types'
+import { SEVERITY_ORDER } from '@/types'
 
 const SEVERITY_COLORS: Record<Severity, string> = {
   CRITICAL: '#ef4444',
@@ -26,10 +27,7 @@ export function SeverityChart() {
 
   const data = (Object.entries(metrics.severityCounts) as [Severity, number][])
     .filter(([, count]) => count > 0)
-    .sort((a, b) => {
-      const order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'NONE', 'UNKNOWN']
-      return order.indexOf(a[0]) - order.indexOf(b[0])
-    })
+    .sort((a, b) => SEVERITY_ORDER[a[0]] - SEVERITY_ORDER[b[0]])
     .map(([severity, count]) => ({ severity, count }))
 
   if (data.length === 0) {

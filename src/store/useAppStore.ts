@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Finding, CVEGroup, DashboardMetrics, Upload, ColumnMapping, Severity } from '@/types'
+import { SEVERITY_ORDER } from '@/types'
 import { rowsToFindings } from '@/lib/parser'
 
 interface AppState {
@@ -16,15 +17,6 @@ interface AppState {
   setSelectedCVE: (cve: CVEGroup | null) => void
   updateColumnMapping: (mapping: ColumnMapping) => void
   remapUpload: (uploadId: string, newMapping: ColumnMapping) => void
-}
-
-const SEVERITY_ORDER: Record<Severity, number> = {
-  CRITICAL: 0,
-  HIGH: 1,
-  MEDIUM: 2,
-  LOW: 3,
-  NONE: 4,
-  UNKNOWN: 5,
 }
 
 function computeMetrics(findings: Finding[]): DashboardMetrics {

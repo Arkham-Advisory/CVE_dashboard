@@ -5,6 +5,9 @@ import type { Severity } from '@/types'
 
 const CVE_REGEX = /CVE-\d{4}-\d+/i
 
+/** Yield control back to the browser event loop. */
+const yieldToUI = () => new Promise<void>((r) => setTimeout(r, 0))
+
 // ── ARN classification ────────────────────────────────────────────────────────
 
 /** AWS services that are *scanning / detection tools* — their ARNs identify
@@ -227,6 +230,36 @@ export async function parseCSV(
   })
 }
 
+/** Parse CSV with progress callbacks. Progress is emitted in two phases:
+ *  0-50 %  reading/streaming rows, 50-100 % handed off to caller for row processing. */
+export async function parseCSVWithProgress(
+  file: File,
+  onProgress: (pct: number, phase: string) => void,
+): Promise<{ rows: Record<string, unknown>[]; headers: string[] }> {
+  return new Promise((resolve, reject) => {
+    const rows: Record<string, unknown>[] = []
+    let headers: string[] = []
+    // Estimate total rows from file size (rough heuristic: ~100 bytes / row)
+    const estimatedRows = Math.max(1, Math.round(file.size / 100))
+
+    Papa.parse<Record<string, unknown>>(file, {
+      header: true,
+      skipEmptyLines: true,
+      step: (result) => {
+        if (headers.length === 0 && result.meta.fields) headers = result.meta.fields
+        rows.push(result.data)
+        const pct = Math.min(45, Math.round((rows.length / estimatedRows) * 45))
+        onProgress(pct, 'Reading rows…')
+      },
+      complete: () => {
+        onProgress(50, 'Detecting columns…')
+        resolve({ rows, headers })
+      },
+      error: (err) => reject(err),
+    })
+  })
+}
+
 export async function parseXLSX(
   file: File,
 ): Promise<{ rows: Record<string, unknown>[]; headers: string[] }> {
@@ -239,6 +272,30 @@ export async function parseXLSX(
   return { rows, headers }
 }
 
+export async function parseXLSXWithProgress(
+  file: File,
+  onProgress: (pct: number, phase: string) => void,
+): Promise<{ rows: Record<string, unknown>[]; headers: string[] }> {
+  onProgress(5, 'Reading file…')
+  await yieldToUI()
+
+  const buffer = await file.arrayBuffer()
+  onProgress(20, 'Parsing workbook…')
+  await yieldToUI()
+
+  const workbook = XLSX.read(buffer, { type: 'array' })
+  onProgress(35, 'Extracting rows…')
+  await yieldToUI()
+
+  const sheetName = workbook.SheetNames[0]
+  const sheet = workbook.Sheets[sheetName]
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
+  const headers = rows.length > 0 ? Object.keys(rows[0]) : []
+
+  onProgress(50, 'Detecting columns…')
+  return { rows, headers }
+}
+
 export async function parseFileRaw(
   file: File,
 ): Promise<{ rows: Record<string, unknown>[]; headers: string[] }> {
@@ -246,6 +303,65 @@ export async function parseFileRaw(
   if (ext === 'csv') return parseCSV(file)
   if (ext === 'xlsx' || ext === 'xls') return parseXLSX(file)
   throw new Error(`Unsupported file format: ${ext}`)
+}
+
+export async function parseFileRawWithProgress(
+  file: File,
+  onProgress: (pct: number, phase: string) => void,
+): Promise<{ rows: Record<string, unknown>[]; headers: string[] }> {
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  if (ext === 'csv') return parseCSVWithProgress(file, onProgress)
+  if (ext === 'xlsx' || ext === 'xls') return parseXLSXWithProgress(file, onProgress)
+  throw new Error(`Unsupported file format: ${ext}`)
+}
+
+/** rowsToFindings that yields every 500 rows to keep the UI responsive.
+ *  onProgress receives values in the 50-100 range. */
+export async function rowsToFindingsAsync(
+  rows: Record<string, unknown>[],
+  mapping: ColumnMapping,
+  sourceFile: string,
+  onProgress: (pct: number, phase: string) => void,
+  chunkSize = 500,
+): Promise<Finding[]> {
+  const findings: Finding[] = []
+  const total = rows.length
+
+  for (let i = 0; i < total; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize)
+    for (const row of chunk) {
+      const rawCveField = mapping.cveId ? String(row[mapping.cveId] ?? '') : ''
+      const cveMatches = rawCveField.match(/CVE-\d{4}-\d+/gi) ?? []
+      if (cveMatches.length === 0) continue
+
+      for (const cveId of cveMatches) {
+        findings.push({
+          id: `${sourceFile}-${cveId}-${findings.length}`,
+          cveId: cveId.toUpperCase(),
+          severity: mapping.severity ? normalizeSeverity(row[mapping.severity]) : 'UNKNOWN',
+          assetName: mapping.assetName ? String(row[mapping.assetName] ?? '') || undefined : undefined,
+          assetType: mapping.assetType ? String(row[mapping.assetType] ?? '') || undefined : undefined,
+          arn: mapping.arn ? String(row[mapping.arn] ?? '') || undefined : undefined,
+          packageName: mapping.packageName ? String(row[mapping.packageName] ?? '') || undefined : undefined,
+          installedVersion: mapping.installedVersion ? String(row[mapping.installedVersion] ?? '') || undefined : undefined,
+          fixedVersion: mapping.fixedVersion ? String(row[mapping.fixedVersion] ?? '') || undefined : undefined,
+          account: mapping.account ? String(row[mapping.account] ?? '') || undefined : undefined,
+          accountName: mapping.accountName ? String(row[mapping.accountName] ?? '') || undefined : undefined,
+          region: mapping.region ? String(row[mapping.region] ?? '') || undefined : undefined,
+          description: mapping.description ? String(row[mapping.description] ?? '') || undefined : undefined,
+          sla: mapping.sla ? String(row[mapping.sla] ?? '') || undefined : undefined,
+          sourceFile,
+          raw: row,
+        })
+      }
+    }
+
+    const pct = 50 + Math.round(((i + chunkSize) / total) * 48)
+    onProgress(Math.min(98, pct), `Processing rows (${Math.min(i + chunkSize, total).toLocaleString()} / ${total.toLocaleString()})…`)
+    await yieldToUI()
+  }
+
+  return findings
 }
 
 export async function parseFile(file: File): Promise<{

@@ -1,5 +1,23 @@
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE' | 'UNKNOWN'
 
+/** Canonical severity order from most to least critical. */
+export const SEVERITY_ORDER: Record<Severity, number> = {
+  CRITICAL: 0,
+  HIGH: 1,
+  MEDIUM: 2,
+  LOW: 3,
+  NONE: 4,
+  UNKNOWN: 5,
+}
+
+/** Sorted list of all severities in canonical order. */
+export const ORDERED_SEVERITIES: Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'NONE', 'UNKNOWN']
+
+/** Comparator: sort by severity, most severe first. */
+export function compareSeverity(a: Severity, b: Severity): number {
+  return SEVERITY_ORDER[a] - SEVERITY_ORDER[b]
+}
+
 export interface Finding {
   id: string
   cveId: string

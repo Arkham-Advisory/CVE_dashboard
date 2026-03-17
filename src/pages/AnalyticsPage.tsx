@@ -47,6 +47,7 @@ import type {
   ChartType,
   Severity,
 } from '@/types'
+import { SEVERITY_ORDER } from '@/types'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -166,8 +167,12 @@ function aggregateFindings(
     }
   })
 
-  // Sort by current metric desc
-  rows.sort((a, b) => b[metric] - a[metric])
+  // Sort by current metric desc — but always use severity canonical order when groupBy=severity
+  if (groupBy === 'severity') {
+    rows.sort((a, b) => (SEVERITY_ORDER[a.group as Severity] ?? 99) - (SEVERITY_ORDER[b.group as Severity] ?? 99))
+  } else {
+    rows.sort((a, b) => b[metric] - a[metric])
+  }
 
   return rows.slice(0, topN)
 }

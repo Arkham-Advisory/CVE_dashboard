@@ -37,9 +37,10 @@ import {
 } from '@/components/ui/select'
 import { useAppStore } from '@/store/useAppStore'
 import type { Finding, Severity } from '@/types'
+import { ORDERED_SEVERITIES, SEVERITY_ORDER } from '@/types'
 
 const columnHelper = createColumnHelper<Finding>()
-const ALL_SEVERITIES: Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']
+const ALL_SEVERITIES: Severity[] = ORDERED_SEVERITIES.filter((s) => s !== 'NONE')
 
 function useDistinct(findings: Finding[], key: keyof Finding): string[] {
   return useMemo(
@@ -193,6 +194,9 @@ export function FindingsTable() {
             Severity <ArrowUpDown className="ml-1 h-3 w-3" />
           </Button>
         ),
+        sortingFn: (rowA, rowB) =>
+          SEVERITY_ORDER[rowA.original.severity as Severity] -
+          SEVERITY_ORDER[rowB.original.severity as Severity],
         cell: (info) => <SeverityBadge severity={info.getValue() as Severity} />,
       }),
       columnHelper.accessor('assetName', {
@@ -297,7 +301,10 @@ export function FindingsTable() {
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize } },
+    initialState: {
+      pagination: { pageSize },
+      sorting: [{ id: 'severity', desc: false }],
+    },
   })
 
   useMemo(() => { table.setPageSize(pageSize) }, [pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
