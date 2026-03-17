@@ -7,8 +7,8 @@ export const DEFAULT_CONFIG: AnalyticsConfig = {
   groupBy: 'severity',
   stackBy: undefined,
   metric: 'findings',
-  scatterX: 'uniqueCVEs',
-  scatterY: 'affectedAssets',
+  scatterX: 'severity',
+  scatterY: 'environment',
   filters: {
     severities: [],
     accounts: [],

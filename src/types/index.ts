@@ -175,8 +175,8 @@ export interface AnalyticsConfig {
   groupBy: DimensionKey
   stackBy?: DimensionKey
   metric: MetricKey
-  scatterX?: MetricKey
-  scatterY?: MetricKey
+  scatterX?: DimensionKey
+  scatterY?: DimensionKey
   filters: AnalyticsFilters
   topN: number
 }

@@ -376,84 +376,107 @@ function AnalyticsPieChart({
 }
 
 // ── Analytics Scatter (Bubble) Chart ─────────────────────────────────────────
+// Both X and Y axes are categorical dimensions; bubble size = a metric.
+// We map each distinct dim-value to a numeric index for Recharts positioning.
 
 function AnalyticsScatterChart({
-  data,
-  xMetric,
-  yMetric,
+  findings,
+  xDim,
+  yDim,
   sizeMetric,
-  groupBy,
 }: {
-  data: AggregatedRow[]
-  xMetric: MetricKey
-  yMetric: MetricKey
+  findings: Finding[]
+  xDim: DimensionKey
+  yDim: DimensionKey
   sizeMetric: MetricKey
-  groupBy: DimensionKey
 }) {
-  const isSeverityGroup = groupBy === 'severity'
-  const scatterData = data.map((row, i) => ({
-    ...row,
-    xVal: row[xMetric],
-    yVal: row[yMetric],
-    zVal: Math.max(row[sizeMetric], 1),
-    fill: isSeverityGroup
-      ? SEVERITY_COLORS[row.group as Severity] ?? PALETTE[i % PALETTE.length]
-      : PALETTE[i % PALETTE.length],
-  }))
+  // Build cross-product aggregation: (xVal × yVal) → metric
+  const { points, xLabels, yLabels } = useMemo(() => {
+    const map = new Map<string, Finding[]>()
+    for (const f of findings) {
+      const xv = getDimensionValue(f, xDim)
+      const yv = getDimensionValue(f, yDim)
+      const key = `${xv}\x00${yv}`
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(f)
+    }
+    const xSet = Array.from(new Set(findings.map((f) => getDimensionValue(f, xDim))))
+    const ySet = Array.from(new Set(findings.map((f) => getDimensionValue(f, yDim))))
+    const pts = Array.from(map.entries()).map(([key, fs]) => {
+      const [xLabel, yLabel] = key.split('\x00')
+      let z: number
+      switch (sizeMetric) {
+        case 'uniqueCVEs': z = new Set(fs.map((f) => f.cveId)).size; break
+        case 'affectedAssets': z = new Set(fs.map((f) => f.assetName).filter(Boolean)).size; break
+        case 'fixableFindings': z = fs.filter((f) => !!f.fixedVersion).length; break
+        default: z = fs.length
+      }
+      return { xLabel, yLabel, xIdx: xSet.indexOf(xLabel), yIdx: ySet.indexOf(yLabel), z: Math.max(z, 1), metricVal: z }
+    })
+    return { points: pts, xLabels: xSet, yLabels: ySet }
+  }, [findings, xDim, yDim, sizeMetric])
 
-  if (data.length === 0) {
+  if (points.length === 0) {
     return <p className="text-sm text-muted-foreground text-center py-12">No data</p>
   }
 
   return (
-    <ResponsiveContainer width="100%" height={340}>
-      <ScatterChart margin={{ top: 20, right: 30, left: 10, bottom: 35 }}>
+    <ResponsiveContainer width="100%" height={Math.max(360, yLabels.length * 40 + 100)}>
+      <ScatterChart margin={{ top: 20, right: 30, left: 60, bottom: 60 }}>
         <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
         <XAxis
           type="number"
-          dataKey="xVal"
-          name={METRIC_LABELS[xMetric]}
-          tick={{ fontSize: 11 }}
+          dataKey="xIdx"
+          name={DIMENSION_LABELS[xDim]}
+          domain={[-0.5, xLabels.length - 0.5]}
+          ticks={xLabels.map((_, i) => i)}
+          tickFormatter={(v: number) => xLabels[v] ?? ''}
+          tick={{ fontSize: 10 }}
           tickLine={false}
           axisLine={false}
-          label={{ value: METRIC_LABELS[xMetric], position: 'insideBottom', offset: -25, fontSize: 11 }}
+          interval={0}
+          angle={-35}
+          textAnchor="end"
+          height={55}
+          label={{ value: DIMENSION_LABELS[xDim], position: 'insideBottom', offset: -45, fontSize: 11 }}
         />
         <YAxis
           type="number"
-          dataKey="yVal"
-          name={METRIC_LABELS[yMetric]}
-          tick={{ fontSize: 11 }}
+          dataKey="yIdx"
+          name={DIMENSION_LABELS[yDim]}
+          domain={[-0.5, yLabels.length - 0.5]}
+          ticks={yLabels.map((_, i) => i)}
+          tickFormatter={(v: number) => yLabels[v] ?? ''}
+          tick={{ fontSize: 10 }}
           tickLine={false}
           axisLine={false}
-          label={{ value: METRIC_LABELS[yMetric], angle: -90, position: 'insideLeft', offset: 12, fontSize: 11 }}
+          interval={0}
+          width={55}
+          label={{ value: DIMENSION_LABELS[yDim], angle: -90, position: 'insideLeft', offset: 55, fontSize: 11 }}
         />
-        <ZAxis type="number" dataKey="zVal" range={[50, 1200]} name={METRIC_LABELS[sizeMetric]} />
+        <ZAxis type="number" dataKey="z" range={[40, 900]} name={METRIC_LABELS[sizeMetric]} />
         <ReChartsTooltip
           cursor={{ strokeDasharray: '3 3' }}
           content={({ active, payload }) => {
             if (!active || !payload?.length) return null
-            const d = payload[0].payload as AggregatedRow & { xVal: number; yVal: number; zVal: number }
+            const d = payload[0].payload as typeof points[number]
             return (
               <div className="rounded border bg-background p-2 shadow-lg text-xs space-y-1">
-                <div className="font-semibold">{d.group}</div>
+                <div className="font-semibold">{d.xLabel} × {d.yLabel}</div>
                 <div className="text-muted-foreground">
-                  {METRIC_LABELS[xMetric]}: <span className="text-foreground font-medium">{d.xVal}</span>
+                  {DIMENSION_LABELS[xDim]}: <span className="text-foreground font-medium">{d.xLabel}</span>
                 </div>
                 <div className="text-muted-foreground">
-                  {METRIC_LABELS[yMetric]}: <span className="text-foreground font-medium">{d.yVal}</span>
+                  {DIMENSION_LABELS[yDim]}: <span className="text-foreground font-medium">{d.yLabel}</span>
                 </div>
                 <div className="text-muted-foreground">
-                  {METRIC_LABELS[sizeMetric]} (size): <span className="text-foreground font-medium">{d.zVal}</span>
+                  {METRIC_LABELS[sizeMetric]}: <span className="text-foreground font-medium">{d.metricVal}</span>
                 </div>
               </div>
             )
           }}
         />
-        <Scatter data={scatterData}>
-          {scatterData.map((entry, index) => (
-            <Cell key={`cell-${index}`} fill={entry.fill} fillOpacity={0.75} />
-          ))}
-        </Scatter>
+        <Scatter data={points} fill="#6366f1" fillOpacity={0.7} />
       </ScatterChart>
     </ResponsiveContainer>
   )
@@ -679,12 +702,12 @@ export function AnalyticsPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs">X Axis</Label>
                     <Select
-                      value={config.scatterX ?? 'uniqueCVEs'}
-                      onValueChange={(v) => updateConfig({ scatterX: v as MetricKey })}
+                      value={config.scatterX ?? 'severity'}
+                      onValueChange={(v) => updateConfig({ scatterX: v as DimensionKey })}
                     >
                       <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {(Object.entries(METRIC_LABELS) as [MetricKey, string][]).map(([key, label]) => (
+                        {(Object.entries(DIMENSION_LABELS) as [DimensionKey, string][]).map(([key, label]) => (
                           <SelectItem key={key} value={key} className="text-xs">{label}</SelectItem>
                         ))}
                       </SelectContent>
@@ -693,12 +716,12 @@ export function AnalyticsPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs">Y Axis</Label>
                     <Select
-                      value={config.scatterY ?? 'affectedAssets'}
-                      onValueChange={(v) => updateConfig({ scatterY: v as MetricKey })}
+                      value={config.scatterY ?? 'environment'}
+                      onValueChange={(v) => updateConfig({ scatterY: v as DimensionKey })}
                     >
                       <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {(Object.entries(METRIC_LABELS) as [MetricKey, string][]).map(([key, label]) => (
+                        {(Object.entries(DIMENSION_LABELS) as [DimensionKey, string][]).map(([key, label]) => (
                           <SelectItem key={key} value={key} className="text-xs">{label}</SelectItem>
                         ))}
                       </SelectContent>
@@ -771,7 +794,7 @@ export function AnalyticsPage() {
             <CardHeader>
               <CardTitle className="text-base">
                 {config.chartType === 'scatter'
-                  ? `${METRIC_LABELS[config.scatterX ?? 'uniqueCVEs']} vs ${METRIC_LABELS[config.scatterY ?? 'affectedAssets']} by ${DIMENSION_LABELS[config.groupBy]}`
+                  ? `${DIMENSION_LABELS[config.scatterX ?? 'severity']} vs ${DIMENSION_LABELS[config.scatterY ?? 'environment']} · size = ${METRIC_LABELS[config.metric]}`
                   : `${METRIC_LABELS[config.metric]} by ${DIMENSION_LABELS[config.groupBy]}${config.stackBy ? ` · Stacked by ${DIMENSION_LABELS[config.stackBy]}` : ''}`
                 }
                 <Badge variant="outline" className="ml-2 text-xs font-normal">
@@ -797,11 +820,10 @@ export function AnalyticsPage() {
               )}
               {config.chartType === 'scatter' && (
                 <AnalyticsScatterChart
-                  data={aggregated}
-                  xMetric={config.scatterX ?? 'uniqueCVEs'}
-                  yMetric={config.scatterY ?? 'affectedAssets'}
+                  findings={findings}
+                  xDim={config.scatterX ?? 'severity'}
+                  yDim={config.scatterY ?? 'environment'}
                   sizeMetric={config.metric}
-                  groupBy={config.groupBy}
                 />
               )}
             </CardContent>
