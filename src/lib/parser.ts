@@ -81,6 +81,21 @@ export function detectColumnsFromRows(
       (lower.includes('description') || lower.includes('title') || lower.includes('summary'))
     )
       mapping.description = h
+    if (
+      !mapping.arn &&
+      (lower === 'arn' || lower.includes('resource_arn') || lower.includes('resource arn'))
+    )
+      mapping.arn = h
+    // Detect ARN column by scanning values
+    if (!mapping.arn) {
+      const sample = rows
+        .slice(0, 10)
+        .map((r) => String(r[h] ?? ''))
+        .join(' ')
+      if (sample.startsWith('arn:aws:') || sample.includes(' arn:aws:')) {
+        mapping.arn = h
+      }
+    }
   }
 
   return mapping
@@ -110,6 +125,7 @@ function rowsToFindings(
         assetType: mapping.assetType
           ? String(row[mapping.assetType] ?? '') || undefined
           : undefined,
+        arn: mapping.arn ? String(row[mapping.arn] ?? '') || undefined : undefined,
         packageName: mapping.packageName
           ? String(row[mapping.packageName] ?? '') || undefined
           : undefined,

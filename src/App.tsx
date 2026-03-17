@@ -3,6 +3,7 @@ import { Layout } from '@/components/Layout'
 import { CVEDetailDrawer } from '@/components/CVEDetailDrawer'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { FindingsPage } from '@/pages/FindingsPage'
+import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { ReportPage } from '@/pages/ReportPage'
 import { useAppStore } from '@/store/useAppStore'
 
@@ -15,6 +16,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/findings" element={<FindingsPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/report" element={<ReportPage />} />
         </Routes>
       </Layout>

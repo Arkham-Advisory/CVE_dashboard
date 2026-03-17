@@ -6,6 +6,7 @@ export interface Finding {
   severity: Severity
   assetName?: string
   assetType?: string
+  arn?: string
   packageName?: string
   installedVersion?: string
   fixedVersion?: string
@@ -40,6 +41,7 @@ export interface ColumnMapping {
   severity?: string
   assetName?: string
   assetType?: string
+  arn?: string
   packageName?: string
   installedVersion?: string
   fixedVersion?: string
@@ -57,3 +59,72 @@ export interface Upload {
   columns: string[]
   mapping: ColumnMapping
 }
+
+// ── NVD / CVE enrichment ────────────────────────────────────────────────────
+
+export interface NVDReference {
+  url: string
+  source?: string
+  tags?: string[]
+}
+
+export interface NVDCVEData {
+  cveId: string
+  description: string
+  cvssV3Score?: number
+  cvssV3Vector?: string
+  cvssV3BaseSeverity?: string
+  cvssV2Score?: number
+  exploitabilityScore?: number
+  impactScore?: number
+  cwes: string[]
+  references: NVDReference[]
+  publishedDate: string
+  lastModifiedDate: string
+  fetchedAt: number
+}
+
+// ── Analytics ────────────────────────────────────────────────────────────────
+
+export type DimensionKey =
+  | 'severity'
+  | 'account'
+  | 'region'
+  | 'packageName'
+  | 'assetType'
+  | 'assetName'
+  | 'sourceFile'
+  | 'cveYear'
+  | 'cveId'
+
+export type MetricKey = 'findings' | 'uniqueCVEs' | 'affectedAssets' | 'fixableFindings'
+
+export type ChartType = 'bar' | 'pie' | 'scatter' | 'treemap'
+
+export interface AnalyticsFilters {
+  severities: Severity[]
+  accounts: string[]
+  regions: string[]
+  assetTypes: string[]
+  hasFix: boolean | null
+  cvssMin: number
+  cvssMax: number
+}
+
+export interface AnalyticsConfig {
+  chartType: ChartType
+  groupBy: DimensionKey
+  stackBy?: DimensionKey
+  metric: MetricKey
+  filters: AnalyticsFilters
+  topN: number
+}
+
+export interface AnalyticsPreset {
+  id: string
+  name: string
+  description?: string
+  config: AnalyticsConfig
+  createdAt: number
+}
+

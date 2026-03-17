@@ -2,6 +2,7 @@ import { UploadPanel } from '@/components/UploadPanel'
 import { MetricsCards } from '@/components/MetricsCards'
 import { SeverityChart } from '@/components/SeverityChart'
 import { TopCVEs, TopAssets } from '@/components/TopLists'
+import { CVSSBubbleChart } from '@/components/CVSSBubbleChart'
 import { useAppStore } from '@/store/useAppStore'
 
 export function DashboardPage() {
@@ -32,6 +33,8 @@ export function DashboardPage() {
               <TopAssets />
             </div>
           </div>
+
+          <CVSSBubbleChart />
         </>
       )}
     </div>
