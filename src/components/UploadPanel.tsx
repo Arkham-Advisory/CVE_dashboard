@@ -7,8 +7,11 @@ import {
   parseFileRawWithProgress,
   detectColumnsFromRows,
   rowsToFindingsAsync,
+  getXLSXSheetsPreview,
+  type XLSXSheetPreview,
 } from '@/lib/parser'
 import { ColumnMappingModal } from '@/components/ColumnMappingModal'
+import { SheetPickerModal } from '@/components/SheetPickerModal'
 import type { ColumnMapping, Upload as UploadType } from '@/types'
 
 // ── Per-file tracking ─────────────────────────────────────────────────────────
@@ -27,6 +30,11 @@ interface FileState {
   rows?: Record<string, unknown>[]
   headers?: string[]
   detectedMapping?: ColumnMapping
+}
+
+interface SheetPickerState {
+  file: File
+  sheets: XLSXSheetPreview[]
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -50,6 +58,7 @@ export function UploadPanel() {
   const [processingFiles, setProcessingFiles] = useState<FileState[]>([])
   const [pendingQueue, setPendingQueue] = useState<FileState[]>([])  // ready → awaiting mapping
   const [remapTarget, setRemapTarget] = useState<UploadType | null>(null)
+  const [sheetPicker, setSheetPicker] = useState<SheetPickerState | null>(null)
   const { addFindings, uploads, clearAll, remapUpload } = useAppStore()
   const processingRef = useRef(new Set<string>()) // prevent double-processing
 
@@ -62,7 +71,7 @@ export function UploadPanel() {
 
   // Process a single File object asynchronously (non-blocking)
   const processOneFile = useCallback(
-    async (file: File) => {
+    async (file: File, sheetName?: string) => {
       const key = `${file.name}-${Date.now()}-${Math.random()}`
       if (processingRef.current.has(key)) return
       processingRef.current.add(key)
@@ -81,7 +90,7 @@ export function UploadPanel() {
         // Phase 1: read + detect columns (0-50%)
         const { rows, headers } = await parseFileRawWithProgress(file, (pct, phase) => {
           updateFile(key, { progress: pct, phase, status: 'reading' })
-        })
+        }, sheetName)
 
         updateFile(key, { progress: 50, phase: 'Detecting columns…', status: 'reading' })
         const detectedMapping = detectColumnsFromRows(headers, rows)
@@ -116,15 +125,55 @@ export function UploadPanel() {
     [updateFile],
   )
 
+  // For Excel files: read sheet metadata and show picker if multiple sheets exist
+  const startSheetPicker = useCallback(
+    async (file: File) => {
+      const key = `${file.name}-sheets-${Date.now()}`
+      const initial: FileState = {
+        key,
+        fileName: file.name,
+        fileSize: file.size,
+        status: 'reading',
+        progress: 0,
+        phase: 'Scanning sheets…',
+      }
+      setProcessingFiles((prev) => [...prev, initial])
+      try {
+        const sheets = await getXLSXSheetsPreview(file)
+        setProcessingFiles((prev) => prev.filter((f) => f.key !== key))
+        if (sheets.length <= 1) {
+          // Single sheet — no picker needed, proceed directly
+          processOneFile(file, sheets[0]?.name)
+        } else {
+          setSheetPicker({ file, sheets })
+        }
+      } catch (e) {
+        updateFile(key, {
+          status: 'error',
+          phase: 'Failed to read workbook',
+          error: e instanceof Error ? e.message : 'Could not read Excel file',
+          progress: 0,
+        })
+      }
+    },
+    [processOneFile, updateFile],
+  )
+
   const handleFiles = useCallback(
     (files: File[]) => {
       const valid = files.filter(
         (f) => f.name.endsWith('.csv') || f.name.endsWith('.xlsx') || f.name.endsWith('.xls'),
       )
-      // Fire all off in parallel — each updates its own slice of state
-      valid.forEach((f) => processOneFile(f))
+      valid.forEach((f) => {
+        const isExcel = f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+        if (isExcel) {
+          startSheetPicker(f)
+        } else {
+          processOneFile(f)
+        }
+      })
     },
-    [processOneFile],
+    [processOneFile, startSheetPicker],
   )
 
   const handleDrop = useCallback(
@@ -179,6 +228,18 @@ export function UploadPanel() {
     },
     [remapTarget, remapUpload],
   )
+
+  const handleSheetSelected = useCallback(
+    (selectedSheet: string) => {
+      if (!sheetPicker) return
+      const { file } = sheetPicker
+      setSheetPicker(null)
+      processOneFile(file, selectedSheet)
+    },
+    [sheetPicker, processOneFile],
+  )
+
+  const handleSheetCancel = useCallback(() => setSheetPicker(null), [])
 
   const dismissError = (key: string) =>
     setProcessingFiles((prev) => prev.filter((f) => f.key !== key))
@@ -319,6 +380,17 @@ export function UploadPanel() {
           )}
         </CardContent>
       </Card>
+
+      {/* Sheet picker modal — multi-sheet Excel workbooks */}
+      {sheetPicker && (
+        <SheetPickerModal
+          open={true}
+          fileName={sheetPicker.file.name}
+          sheets={sheetPicker.sheets}
+          onSelect={handleSheetSelected}
+          onCancel={handleSheetCancel}
+        />
+      )}
 
       {/* Column mapping modal — new file queue */}
       {activePending && (

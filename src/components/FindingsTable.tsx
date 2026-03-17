@@ -8,6 +8,7 @@ import {
   createColumnHelper,
   flexRender,
   type SortingState,
+  type ColumnDef,
 } from '@tanstack/react-table'
 import {
   ArrowUpDown,
@@ -17,17 +18,20 @@ import {
   SlidersHorizontal,
   CheckSquare2,
   X,
+  Zap,
+  ShieldAlert,
+  FlaskConical,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { SeverityBadge } from '@/components/SeverityBadge'
+import { PriorityBadge } from '@/components/PriorityBadge'
+import { FixStatusBadge } from '@/components/FixStatusBadge'
 import { AssetTypeIcon, parseARN } from '@/components/AssetTypeIcon'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Select,
   SelectContent,
@@ -36,454 +40,454 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useAppStore } from '@/store/useAppStore'
-import type { Finding, Severity } from '@/types'
-import { ORDERED_SEVERITIES, SEVERITY_ORDER } from '@/types'
+import { getFixStatus } from '@/lib/riskScore'
+import type { Finding, Severity, FixStatus } from '@/types'
+import { SEVERITY_ORDER } from '@/types'
 
-const columnHelper = createColumnHelper<Finding>()
-const ALL_SEVERITIES: Severity[] = ORDERED_SEVERITIES.filter((s) => s !== 'NONE')
+const SEVERITIES: Severity[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'NONE', 'UNKNOWN']
 
-function useDistinct(findings: Finding[], key: keyof Finding): string[] {
-  return useMemo(
-    () => Array.from(new Set(findings.map((f) => f[key] as string).filter(Boolean))).sort(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [findings, key],
-  )
-}
+// Multi-select popover for severities
+function SeverityFilter({
+  selected,
+  onChange,
+}: {
+  selected: Severity[]
+  onChange: (v: Severity[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const toggle = (s: Severity) =>
+    onChange(selected.includes(s) ? selected.filter((x) => x !== s) : [...selected, s])
 
-interface MultiSelectProps {
-  label: string
-  options: string[]
-  selected: string[]
-  onChange: (v: string[]) => void
-}
-function MultiSelectFilter({ label, options, selected, onChange }: MultiSelectProps) {
-  const toggle = (v: string) =>
-    onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v])
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-9 gap-1.5">
-          {label}
-          {selected.length > 0 && (
-            <Badge variant="secondary" className="h-4 px-1 text-[10px]">
-              {selected.length}
-            </Badge>
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-52 p-2" align="start">
-        <div className="space-y-0.5 max-h-56 overflow-y-auto">
+    <div className="relative">
+      <Button
+        variant="outline"
+        size="sm"
+        className="gap-1.5 h-8 text-xs"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <SlidersHorizontal className="h-3.5 w-3.5" />
+        Severity
+        {selected.length > 0 && (
+          <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+            {selected.length}
+          </Badge>
+        )}
+      </Button>
+      {open && (
+        <div className="absolute top-full mt-1 left-0 z-30 bg-popover border rounded-md shadow-md p-2 space-y-1 min-w-[140px]">
           <button
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted"
+            className="w-full text-left px-2 py-1.5 text-xs hover:bg-muted rounded"
             onClick={() => onChange([])}
           >
-            <CheckSquare2 className="h-3.5 w-3.5" /> All {label}
+            <CheckSquare2 className="inline h-3.5 w-3.5 mr-1.5" />
+            Clear all
           </button>
-          <Separator className="my-1" />
-          {options.map((opt) => (
-            <div
-              key={opt}
+          <Separator />
+          {SEVERITIES.map((s) => (
+            <label
+              key={s}
               className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-muted cursor-pointer"
-              onClick={() => toggle(opt)}
             >
-              <Checkbox checked={selected.includes(opt)} onCheckedChange={() => toggle(opt)} />
-              <span className="text-xs truncate">{opt}</span>
-            </div>
+              <Checkbox
+                checked={selected.includes(s)}
+                onCheckedChange={() => toggle(s)}
+                className="h-3.5 w-3.5"
+              />
+              <SeverityBadge severity={s} />
+            </label>
           ))}
+          <button
+            className="w-full text-right px-2 py-1.5 text-xs text-primary hover:underline"
+            onClick={() => setOpen(false)}
+          >
+            Done
+          </button>
         </div>
-      </PopoverContent>
-    </Popover>
+      )}
+    </div>
   )
 }
 
+// Exploit intelligence badges shown under CVE ID
+function ExploitFlags({ finding }: { finding: Finding }) {
+  if (!finding.exploitKnown && !finding.exploitAvailable && !finding.exploitPoC) return null
+  return (
+    <TooltipProvider delayDuration={300}>
+      <div className="flex items-center gap-1 mt-0.5">
+        {finding.exploitKnown && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex items-center gap-0.5 rounded bg-red-100 border border-red-300 text-red-700 px-1 py-0.5 text-[10px] font-semibold cursor-default">
+                <Zap className="h-2.5 w-2.5" /> KEV
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Known Exploited Vulnerability (actively exploited in the wild)</TooltipContent>
+          </Tooltip>
+        )}
+        {finding.exploitAvailable && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex items-center gap-0.5 rounded bg-orange-100 border border-orange-300 text-orange-700 px-1 py-0.5 text-[10px] font-semibold cursor-default">
+                <ShieldAlert className="h-2.5 w-2.5" /> Exploit
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>A working exploit is publicly available</TooltipContent>
+          </Tooltip>
+        )}
+        {finding.exploitPoC && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex items-center gap-0.5 rounded bg-yellow-100 border border-yellow-300 text-yellow-700 px-1 py-0.5 text-[10px] font-semibold cursor-default">
+                <FlaskConical className="h-2.5 w-2.5" /> PoC
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Proof-of-concept exploit code exists</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+    </TooltipProvider>
+  )
+}
+
+const colHelper = createColumnHelper<Finding>()
+
 export function FindingsTable() {
-  const { findings, cveGroups, setSelectedCVE } = useAppStore()
-  const [sorting, setSorting] = useState<SortingState>([])
+  const { findings, setSelectedCVE, cveGroups } = useAppStore()
+
   const [globalFilter, setGlobalFilter] = useState('')
-  const [severities, setSeverities] = useState<Severity[]>([])
-  const [accounts, setAccounts] = useState<string[]>([])
-  const [regions, setRegions] = useState<string[]>([])
-  const [assetTypes, setAssetTypes] = useState<string[]>([])
-  const [hasFix, setHasFix] = useState(false)
-  const [pageSize, setPageSize] = useState(25)
-  const [cveSearch, setCveSearch] = useState('')
-  const [pkgSearch, setPkgSearch] = useState('')
+  const [severityFilter, setSeverityFilter] = useState<Severity[]>([])
+  const [fixStatusFilter, setFixStatusFilter] = useState<FixStatus | 'all'>('all')
+  const [envFilter, setEnvFilter] = useState<string[]>([])
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'riskScore', desc: true }])
 
-  const distinctAccounts = useMemo(() => {
-    // Show accountName labels when available, falling back to account IDs
-    const values = new Set<string>()
-    for (const f of findings) {
-      const label = f.accountName ?? f.account
-      if (label) values.add(label)
-    }
-    return Array.from(values).sort()
-  }, [findings])
-  const distinctRegions = useDistinct(findings, 'region')
-  const distinctAssetTypes = useDistinct(findings, 'assetType')
+  const environments = useMemo(
+    () => Array.from(new Set(findings.map((f) => f.environment).filter(Boolean))) as string[],
+    [findings],
+  )
 
-  const filteredFindings = useMemo(() => {
+  const filtered = useMemo(() => {
     return findings.filter((f) => {
-      if (severities.length > 0 && !severities.includes(f.severity)) return false
-      if (accounts.length > 0) {
-        const label = f.accountName ?? f.account ?? ''
-        if (!accounts.includes(label)) return false
+      if (severityFilter.length > 0 && !severityFilter.includes(f.severity)) return false
+      if (fixStatusFilter !== 'all' && getFixStatus(f) !== fixStatusFilter) return false
+      if (envFilter.length > 0 && (!f.environment || !envFilter.includes(f.environment))) return false
+      if (globalFilter) {
+        const q = globalFilter.toLowerCase()
+        return (
+          f.cveId.toLowerCase().includes(q) ||
+          (f.assetName ?? '').toLowerCase().includes(q) ||
+          (f.packageName ?? '').toLowerCase().includes(q) ||
+          (f.description ?? '').toLowerCase().includes(q)
+        )
       }
-      if (regions.length > 0 && !regions.includes(f.region ?? '')) return false
-      if (assetTypes.length > 0 && !assetTypes.includes(f.assetType ?? '')) return false
-      if (hasFix && !f.fixedVersion) return false
-      if (cveSearch && !f.cveId.toLowerCase().includes(cveSearch.toLowerCase())) return false
-      if (pkgSearch && !(f.packageName ?? '').toLowerCase().includes(pkgSearch.toLowerCase()))
-        return false
       return true
     })
-  }, [findings, severities, accounts, regions, assetTypes, hasFix, cveSearch, pkgSearch])
+  }, [findings, globalFilter, severityFilter, fixStatusFilter, envFilter])
 
-  const activeCount =
-    severities.length +
-    accounts.length +
-    regions.length +
-    assetTypes.length +
-    (hasFix ? 1 : 0) +
-    (cveSearch ? 1 : 0) +
-    (pkgSearch ? 1 : 0)
-
-  const clearAll = () => {
-    setSeverities([])
-    setAccounts([])
-    setRegions([])
-    setAssetTypes([])
-    setHasFix(false)
-    setCveSearch('')
-    setPkgSearch('')
-    setGlobalFilter('')
-  }
-
-  const columns = useMemo(
+  const columns = useMemo<ColumnDef<Finding, unknown>[]>(
     () => [
-      columnHelper.accessor('cveId', {
+      colHelper.accessor('priorityLabel', {
+        id: 'priority',
+        header: 'Priority',
+        size: 80,
+        cell: (info) => {
+          const p = info.getValue() as Finding['priorityLabel']
+          return p ? <PriorityBadge priority={p} compact /> : null
+        },
+      }) as ColumnDef<Finding, unknown>,
+      colHelper.accessor('riskScore', {
+        id: 'riskScore',
         header: ({ column }) => (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-3 h-8"
+          <button
+            className="flex items-center gap-1 text-xs font-medium hover:text-foreground"
             onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
           >
-            CVE ID <ArrowUpDown className="ml-1 h-3 w-3" />
-          </Button>
-        ),
-        cell: (info) => (
-          <button
-            className="font-mono text-xs font-medium text-primary hover:underline text-left"
-            onClick={() => {
-              const group = cveGroups.find((g) => g.cveId === info.getValue())
-              if (group) setSelectedCVE(group)
-            }}
-          >
-            {info.getValue()}
+            Risk <ArrowUpDown className="h-3 w-3" />
           </button>
         ),
-      }),
-      columnHelper.accessor('severity', {
-        header: ({ column }) => (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-3 h-8"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
-            Severity <ArrowUpDown className="ml-1 h-3 w-3" />
-          </Button>
-        ),
-        sortingFn: (rowA, rowB) =>
-          SEVERITY_ORDER[rowA.original.severity as Severity] -
-          SEVERITY_ORDER[rowB.original.severity as Severity],
-        cell: (info) => <SeverityBadge severity={info.getValue() as Severity} />,
-      }),
-      columnHelper.accessor('assetName', {
-        header: 'Asset',
+        size: 60,
+        cell: (info) => {
+          const score = info.getValue() as number | undefined
+          if (score == null) return <span className="text-muted-foreground text-xs">—</span>
+          const color =
+            score >= 80 ? 'text-red-600' : score >= 60 ? 'text-orange-500' : score >= 40 ? 'text-yellow-600' : 'text-blue-500'
+          return <span className={`text-xs font-bold tabular-nums ${color}`}>{Math.round(score)}</span>
+        },
+      }) as ColumnDef<Finding, unknown>,
+      colHelper.accessor('cveId', {
+        id: 'cveId',
+        header: 'CVE',
+        size: 140,
         cell: (info) => {
           const f = info.row.original
-          const arnParsed = f.arn ? parseARN(f.arn) : null
+          const group = cveGroups.find((g) => g.cveId === f.cveId)
           return (
-            <div className="flex items-center gap-1.5 max-w-[180px]">
-              <AssetTypeIcon arn={f.arn} assetType={f.assetType} assetName={f.assetName} />
-              <div className="min-w-0">
-                <div className="font-mono text-xs truncate" title={f.arn ?? f.assetName}>
-                  {f.assetName ?? '—'}
-                </div>
-                {arnParsed && (
-                  <div className="text-[10px] text-muted-foreground truncate">
-                    {arnParsed.service} · {arnParsed.region || 'global'}
-                  </div>
-                )}
+            <button
+              className="text-left"
+              onClick={() => group && setSelectedCVE(group)}
+            >
+              <div className="font-mono text-xs font-medium text-primary hover:underline">
+                {f.cveId}
               </div>
+              <ExploitFlags finding={f} />
+            </button>
+          )
+        },
+      }) as ColumnDef<Finding, unknown>,
+      colHelper.accessor('severity', {
+        id: 'severity',
+        header: ({ column }) => (
+          <button
+            className="flex items-center gap-1 text-xs font-medium hover:text-foreground"
+            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+          >
+            Severity <ArrowUpDown className="h-3 w-3" />
+          </button>
+        ),
+        size: 90,
+        cell: (info) => <SeverityBadge severity={info.getValue() as Severity} />,
+        sortingFn: (a, b) =>
+          SEVERITY_ORDER[a.original.severity] - SEVERITY_ORDER[b.original.severity],
+      }) as ColumnDef<Finding, unknown>,
+      colHelper.accessor('assetName', {
+        id: 'asset',
+        header: 'Asset',
+        size: 180,
+        cell: (info) => {
+          const f = info.row.original
+          const arn = f.arn ?? ''
+          const parsed = parseARN(arn)
+          const service = parsed?.service
+          return (
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5">
+                {service && <AssetTypeIcon assetType={service} className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                <span className="text-xs truncate max-w-[140px]" title={info.getValue() as string ?? ''}>
+                  {info.getValue() as string ?? '—'}
+                </span>
+              </div>
+              {f.environment && (
+                <span className="text-[10px] text-muted-foreground italic">{f.environment}</span>
+              )}
             </div>
           )
         },
-      }),
-      columnHelper.accessor('assetType', {
-        header: 'Type',
-        cell: (info) => (
-          <span className="text-xs text-muted-foreground">{info.getValue() ?? '—'}</span>
-        ),
-      }),
-      columnHelper.accessor('packageName', {
+      }) as ColumnDef<Finding, unknown>,
+      colHelper.accessor('packageName', {
+        id: 'package',
         header: 'Package',
-        cell: (info) => <span className="font-mono text-xs">{info.getValue() ?? '—'}</span>,
-      }),
-      columnHelper.accessor('installedVersion', {
-        header: 'Installed',
-        cell: (info) => <span className="font-mono text-xs">{info.getValue() ?? '—'}</span>,
-      }),
-      columnHelper.accessor('fixedVersion', {
-        header: 'Fixed In',
-        cell: (info) =>
-          info.getValue() ? (
-            <span className="font-mono text-xs text-green-600 font-medium">{info.getValue()}</span>
-          ) : (
-            <span className="text-xs text-muted-foreground">—</span>
-          ),
-      }),
-      columnHelper.accessor('account', {
-        header: 'Account',
+        size: 150,
         cell: (info) => {
           const f = info.row.original
-          const displayName = f.accountName ?? f.account
-          const titleText = f.accountName ? f.account : undefined // show raw ID on hover only when label is shown
-          return displayName ? (
-            <span className="text-xs text-muted-foreground" title={titleText}>
-              {displayName}
-            </span>
-          ) : (
-            <span className="text-xs text-muted-foreground">—</span>
-          )
-        },
-      }),
-      columnHelper.accessor('region', {
-        header: 'Region',
-        cell: (info) => (
-          <span className="text-xs text-muted-foreground">{info.getValue() ?? '—'}</span>
-        ),
-      }),
-      columnHelper.accessor('sla', {
-        id: 'sla',
-        header: 'SLA / Due',
-        cell: (info) => {
-          const val = info.getValue()
-          if (!val) return <span className="text-xs text-muted-foreground">—</span>
-          // Attempt to parse as date for colour coding
-          const date = new Date(val)
-          const isDate = !isNaN(date.getTime())
-          const isBreached = isDate && date < new Date()
           return (
-            <span
-              className={`text-xs font-mono ${
-                isBreached ? 'text-destructive font-semibold' : 'text-muted-foreground'
-              }`}
-              title={isDate ? date.toLocaleDateString() : undefined}
-            >
-              {isDate ? date.toLocaleDateString() : val}
+            <div className="space-y-0.5">
+              <div className="text-xs font-medium truncate max-w-[130px]" title={info.getValue() as string ?? ''}>
+                {info.getValue() as string ?? '—'}
+              </div>
+              {f.installedVersion && (
+                <div className="text-[10px] text-muted-foreground tabular-nums">v{f.installedVersion}</div>
+              )}
+            </div>
+          )
+        },
+      }) as ColumnDef<Finding, unknown>,
+      colHelper.accessor('fixedVersion', {
+        id: 'fix',
+        header: 'Fix',
+        size: 130,
+        cell: (info) => {
+          const f = info.row.original
+          const status = getFixStatus(f)
+          return (
+            <div className="space-y-0.5">
+              <FixStatusBadge status={status} compact />
+              {f.fixedVersion && (
+                <div className="text-[10px] text-muted-foreground tabular-nums">→ v{f.fixedVersion}</div>
+              )}
+            </div>
+          )
+        },
+      }) as ColumnDef<Finding, unknown>,
+      colHelper.accessor('sla', {
+        id: 'sla',
+        header: 'SLA',
+        size: 90,
+        cell: (info) => {
+          const v = info.getValue() as string | undefined
+          if (!v) return <span className="text-muted-foreground text-xs">—</span>
+          const d = new Date(v)
+          const isPast = d < new Date()
+          return (
+            <span className={`text-xs tabular-nums ${isPast ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>
+              {d.toLocaleDateString()}
             </span>
           )
         },
-      }),
+      }) as ColumnDef<Finding, unknown>,
     ],
     [cveGroups, setSelectedCVE],
   )
 
   const table = useReactTable({
-    data: filteredFindings,
+    data: filtered,
     columns,
-    state: { sorting, globalFilter },
+    state: { sorting },
     onSortingChange: setSorting,
-    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: {
-      pagination: { pageSize },
-      sorting: [{ id: 'severity', desc: false }],
-    },
+    enableMultiSort: true,
+    initialState: { pagination: { pageSize: 25 } },
   })
 
-  useMemo(() => { table.setPageSize(pageSize) }, [pageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+  const activeFiltersCount =
+    (severityFilter.length > 0 ? 1 : 0) +
+    (fixStatusFilter !== 'all' ? 1 : 0) +
+    (envFilter.length > 0 ? 1 : 0)
 
   return (
-    <div className="space-y-4">
-      {/* Search row */}
-      <div className="flex flex-wrap gap-2">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search all columns..."
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            className="pl-8"
-          />
-        </div>
-        <Input
-          placeholder="CVE ID filter..."
-          value={cveSearch}
-          onChange={(e) => setCveSearch(e.target.value)}
-          className="w-44 font-mono text-xs"
-        />
-        <Input
-          placeholder="Package filter..."
-          value={pkgSearch}
-          onChange={(e) => setPkgSearch(e.target.value)}
-          className="w-36 text-xs"
-        />
-      </div>
-
+    <div className="space-y-3">
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2">
-        <SlidersHorizontal className="h-4 w-4 text-muted-foreground shrink-0" />
-        <MultiSelectFilter
-          label="Severity"
-          options={ALL_SEVERITIES}
-          selected={severities}
-          onChange={(v) => setSeverities(v as Severity[])}
-        />
-        {distinctAccounts.length > 0 && (
-          <MultiSelectFilter
-            label="Account"
-            options={distinctAccounts}
-            selected={accounts}
-            onChange={setAccounts}
+        <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            placeholder="Search CVE, asset, package…"
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+            className="pl-8 h-8 text-xs"
           />
-        )}
-        {distinctRegions.length > 0 && (
-          <MultiSelectFilter
-            label="Region"
-            options={distinctRegions}
-            selected={regions}
-            onChange={setRegions}
-          />
-        )}
-        {distinctAssetTypes.length > 0 && (
-          <MultiSelectFilter
-            label="Asset Type"
-            options={distinctAssetTypes}
-            selected={assetTypes}
-            onChange={setAssetTypes}
-          />
-        )}
-        <div className="flex items-center gap-2 rounded-md border px-3 h-9">
-          <Label className="text-xs cursor-pointer whitespace-nowrap">Has Fix</Label>
-          <Switch checked={hasFix} onCheckedChange={setHasFix} />
         </div>
-        {activeCount > 0 && (
-          <Button variant="ghost" size="sm" className="h-9 gap-1 text-muted-foreground" onClick={clearAll}>
-            <X className="h-3.5 w-3.5" /> Clear {activeCount}
-          </Button>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            {table.getFilteredRowModel().rows.length.toLocaleString()} rows
-          </span>
-          <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
-            <SelectTrigger className="h-9 w-20 text-xs">
-              <SelectValue />
+
+        <SeverityFilter selected={severityFilter} onChange={setSeverityFilter} />
+
+        {/* Fix Status filter */}
+        <Select
+          value={fixStatusFilter}
+          onValueChange={(v) => setFixStatusFilter(v as FixStatus | 'all')}
+        >
+          <SelectTrigger className="h-8 text-xs w-[140px]">
+            <SelectValue placeholder="Fix Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Fix Statuses</SelectItem>
+            <SelectItem value="AVAILABLE">Fix Available</SelectItem>
+            <SelectItem value="NONE">No Fix Available</SelectItem>
+            <SelectItem value="UNKNOWN">Unknown</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Environment filter */}
+        {environments.length > 0 && (
+          <Select
+            value={envFilter[0] ?? 'all'}
+            onValueChange={(v) => setEnvFilter(v === 'all' ? [] : [v])}
+          >
+            <SelectTrigger className="h-8 text-xs w-[130px]">
+              <SelectValue placeholder="Environment" />
             </SelectTrigger>
             <SelectContent>
-              {[10, 25, 50, 100].map((n) => (
-                <SelectItem key={n} value={String(n)} className="text-xs">
-                  {n} / page
-                </SelectItem>
+              <SelectItem value="all">All Environments</SelectItem>
+              {environments.map((e) => (
+                <SelectItem key={e} value={e}>{e}</SelectItem>
               ))}
             </SelectContent>
           </Select>
+        )}
+
+        {/* Clear filters */}
+        {activeFiltersCount > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setSeverityFilter([])
+              setFixStatusFilter('all')
+              setEnvFilter([])
+            }}
+          >
+            <X className="h-3.5 w-3.5" />
+            Clear ({activeFiltersCount})
+          </Button>
+        )}
+
+        <div className="ml-auto text-xs text-muted-foreground">
+          {filtered.length.toLocaleString()} finding{filtered.length !== 1 ? 's' : ''}
         </div>
       </div>
 
-      {/* Active chips */}
-      {activeCount > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {severities.map((s) => (
-            <Badge
-              key={s}
-              variant="secondary"
-              className="gap-1 cursor-pointer"
-              onClick={() => setSeverities(severities.filter((x) => x !== s))}
-            >
-              {s} <X className="h-3 w-3" />
-            </Badge>
-          ))}
-          {[...accounts, ...regions, ...assetTypes].map((v) => (
-            <Badge
-              key={v}
-              variant="secondary"
-              className="gap-1 cursor-pointer"
-              onClick={() => {
-                setAccounts(accounts.filter((x) => x !== v))
-                setRegions(regions.filter((x) => x !== v))
-                setAssetTypes(assetTypes.filter((x) => x !== v))
-              }}
-            >
-              {v} <X className="h-3 w-3" />
-            </Badge>
-          ))}
-          {hasFix && (
-            <Badge variant="secondary" className="gap-1 cursor-pointer" onClick={() => setHasFix(false)}>
-              Has Fix <X className="h-3 w-3" />
-            </Badge>
-          )}
-        </div>
-      )}
+      <p className="text-[11px] text-muted-foreground italic">
+        Findings without a fix are always shown. Use the Fix Status filter above to view them specifically.
+      </p>
 
       {/* Table */}
-      <div className="rounded-md border overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id}>
-                {hg.headers.map((h) => (
-                  <th key={h.id} className="text-left px-3 py-2 font-medium text-xs text-muted-foreground whitespace-nowrap">
-                    {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody>
-            {table.getRowModel().rows.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length} className="px-3 py-10 text-center text-sm text-muted-foreground">
-                  No findings match the current filters
-                </td>
-              </tr>
-            ) : (
-              table.getRowModel().rows.map((row, i) => (
-                <tr key={row.id} className={`border-t hover:bg-muted/30 transition-colors ${i % 2 ? 'bg-muted/10' : ''}`}>
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-3 py-2">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
+      <div className="rounded-md border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[800px]">
+            <thead className="bg-muted/50 border-b">
+              {table.getHeaderGroups().map((hg) => (
+                <tr key={hg.id}>
+                  {hg.headers.map((h) => (
+                    <th
+                      key={h.id}
+                      style={{ width: h.getSize() }}
+                      className="px-3 py-2.5 text-left font-medium text-xs text-muted-foreground"
+                    >
+                      {flexRender(h.column.columnDef.header, h.getContext())}
+                    </th>
                   ))}
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ))}
+            </thead>
+            <tbody>
+              {table.getRowModel().rows.length === 0 ? (
+                <tr>
+                  <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    No findings match the current filters.
+                  </td>
+                </tr>
+              ) : (
+                table.getRowModel().rows.map((row, i) => (
+                  <tr key={row.id} className={`border-t ${i % 2 === 1 ? 'bg-muted/5' : ''} hover:bg-muted/20 transition-colors`}>
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} style={{ width: cell.column.getSize() }} className="px-3 py-2">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>
           Page {table.getState().pagination.pageIndex + 1} of {Math.max(1, table.getPageCount())}
         </span>
         <div className="flex items-center gap-1">
-          {[
-            { label: '«', action: () => table.setPageIndex(0), disabled: !table.getCanPreviousPage() },
-            { label: <ChevronLeft className="h-4 w-4" />, action: () => table.previousPage(), disabled: !table.getCanPreviousPage() },
-            { label: <ChevronRight className="h-4 w-4" />, action: () => table.nextPage(), disabled: !table.getCanNextPage() },
-            { label: '»', action: () => table.setPageIndex(table.getPageCount() - 1), disabled: !table.getCanNextPage() },
-          ].map((btn, i) => (
-            <Button key={i} variant="outline" size="icon" className="h-8 w-8" onClick={btn.action} disabled={btn.disabled}>
-              {btn.label}
-            </Button>
-          ))}
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
         </div>
       </div>
     </div>

@@ -86,7 +86,7 @@ export const useAnalyticsStore = create<AnalyticsState>()(
           const config = JSON.parse(atob(cfg)) as AnalyticsConfig
           // Validate basics
           const validCharts: ChartType[] = ['bar', 'pie', 'scatter', 'treemap']
-          const validDims: DimensionKey[] = ['severity', 'account', 'region', 'packageName', 'assetType', 'assetName', 'sourceFile', 'cveYear', 'cveId']
+          const validDims: DimensionKey[] = ['severity', 'account', 'region', 'packageName', 'assetType', 'assetName', 'sourceFile', 'cveYear', 'cveId', 'sla', 'environment', 'findingType', 'treatment', 'exploitAvailable', 'riskPriority']
           const validMetrics: MetricKey[] = ['findings', 'uniqueCVEs', 'affectedAssets', 'fixableFindings']
           if (
             validCharts.includes(config.chartType) &&

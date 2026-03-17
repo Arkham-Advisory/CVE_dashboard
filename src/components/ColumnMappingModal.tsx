@@ -97,6 +97,36 @@ const MAPPING_FIELDS: MappingField[] = [
     label: 'SLA / Due Date',
     description: 'Remediation deadline, SLA breach date, or target fix date',
   },
+  {
+    key: 'environment',
+    label: 'Environment',
+    description: 'Deployment environment — production, staging, development, etc.',
+  },
+  {
+    key: 'findingType',
+    label: 'Finding Type',
+    description: 'Category of finding — e.g. software vulnerability, misconfiguration',
+  },
+  {
+    key: 'treatment',
+    label: 'Treatment / Status',
+    description: 'Remediation treatment — accepted risk, in progress, resolved, etc.',
+  },
+  {
+    key: 'exploitAvailable',
+    label: 'Exploit Available',
+    description: 'Boolean — true/yes/1 if a working exploit is publicly available',
+  },
+  {
+    key: 'exploitKnown',
+    label: 'Known Exploited (KEV)',
+    description: 'Boolean — true/yes/1 if the CVE is in the CISA Known Exploited Vulnerabilities catalog',
+  },
+  {
+    key: 'exploitPoC',
+    label: 'Proof-of-Concept Exists',
+    description: 'Boolean — true/yes/1 if a PoC exploit exists for this vulnerability',
+  },
 ]
 
 function getSampleValues(col: string, rows: Record<string, unknown>[]): string[] {

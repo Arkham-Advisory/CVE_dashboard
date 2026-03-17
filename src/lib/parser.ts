@@ -1,7 +1,15 @@
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
-import type { Finding, ColumnMapping, Upload } from '@/types'
-import type { Severity } from '@/types'
+import type { Finding, ColumnMapping, Upload, Severity } from '@/types'
+
+function parseBooleanField(val: unknown): boolean | undefined {
+  if (val === undefined || val === null || val === '') return undefined
+  if (typeof val === 'boolean') return val
+  const s = String(val).toLowerCase().trim()
+  if (s === 'true' || s === 'yes' || s === '1') return true
+  if (s === 'false' || s === 'no' || s === '0') return false
+  return undefined
+}
 
 const CVE_REGEX = /CVE-\d{4}-\d+/i
 
@@ -148,6 +156,37 @@ export function detectColumnsFromRows(
          lower.includes('remediation_deadline')))
       mapping.sla = h
 
+    // New extended dimensions
+    if (!mapping.environment &&
+        (lower === 'environment' || lower === 'env' || lower === 'deployment_env' ||
+         lower.includes('environment') || lower === 'tier'))
+      mapping.environment = h
+
+    if (!mapping.findingType &&
+        (lower === 'finding_type' || lower === 'findingtype' || lower === 'vuln_type' ||
+         lower === 'vulnerability_type' || lower === 'type'))
+      mapping.findingType = h
+
+    if (!mapping.treatment &&
+        (lower === 'treatment' || lower === 'remediation_status' || lower === 'disposition' ||
+         lower === 'resolution' || lower === 'action'))
+      mapping.treatment = h
+
+    if (!mapping.exploitAvailable &&
+        (lower === 'exploit_available' || lower === 'exploitavailable' || lower === 'exploit' ||
+         lower.includes('exploit_avail')))
+      mapping.exploitAvailable = h
+
+    if (!mapping.exploitKnown &&
+        (lower === 'exploit_known' || lower === 'exploitknown' || lower.includes('known_exploit') ||
+         lower === 'actively_exploited' || lower === 'cisa_kev'))
+      mapping.exploitKnown = h
+
+    if (!mapping.exploitPoC &&
+        (lower === 'exploit_poc' || lower === 'exploitpoc' || lower === 'proof_of_concept' ||
+         lower === 'poc'))
+      mapping.exploitPoC = h
+
     // Explicit ARN header names (get a score bonus)
     if (!mapping.arn &&
         (lower === 'arn' || lower === 'resource_arn' || lower === 'asset_arn' ||
@@ -173,6 +212,41 @@ export function detectColumnsFromRows(
   return mapping
 }
 
+// ── Row → Finding helper ──────────────────────────────────────────────────────
+
+function buildFinding(
+  row: Record<string, unknown>,
+  cveId: string,
+  mapping: ColumnMapping,
+  sourceFile: string,
+  idx: number,
+): Finding {
+  return {
+    id: `${sourceFile}-${cveId}-${idx}`,
+    cveId: cveId.toUpperCase(),
+    severity: mapping.severity ? normalizeSeverity(row[mapping.severity]) : 'UNKNOWN',
+    assetName: mapping.assetName ? String(row[mapping.assetName] ?? '') || undefined : undefined,
+    assetType: mapping.assetType ? String(row[mapping.assetType] ?? '') || undefined : undefined,
+    arn: mapping.arn ? String(row[mapping.arn] ?? '') || undefined : undefined,
+    packageName: mapping.packageName ? String(row[mapping.packageName] ?? '') || undefined : undefined,
+    installedVersion: mapping.installedVersion ? String(row[mapping.installedVersion] ?? '') || undefined : undefined,
+    fixedVersion: mapping.fixedVersion ? String(row[mapping.fixedVersion] ?? '') || undefined : undefined,
+    account: mapping.account ? String(row[mapping.account] ?? '') || undefined : undefined,
+    accountName: mapping.accountName ? String(row[mapping.accountName] ?? '') || undefined : undefined,
+    region: mapping.region ? String(row[mapping.region] ?? '') || undefined : undefined,
+    description: mapping.description ? String(row[mapping.description] ?? '') || undefined : undefined,
+    sla: mapping.sla ? String(row[mapping.sla] ?? '') || undefined : undefined,
+    environment: mapping.environment ? String(row[mapping.environment] ?? '') || undefined : undefined,
+    findingType: mapping.findingType ? String(row[mapping.findingType] ?? '') || undefined : undefined,
+    treatment: mapping.treatment ? String(row[mapping.treatment] ?? '') || undefined : undefined,
+    exploitAvailable: mapping.exploitAvailable ? parseBooleanField(row[mapping.exploitAvailable]) : undefined,
+    exploitKnown: mapping.exploitKnown ? parseBooleanField(row[mapping.exploitKnown]) : undefined,
+    exploitPoC: mapping.exploitPoC ? parseBooleanField(row[mapping.exploitPoC]) : undefined,
+    sourceFile,
+    raw: row,
+  }
+}
+
 // ── Row → Findings ────────────────────────────────────────────────────────────
 
 export function rowsToFindings(
@@ -188,24 +262,7 @@ export function rowsToFindings(
     if (cveMatches.length === 0) continue
 
     for (const cveId of cveMatches) {
-      findings.push({
-        id: `${sourceFile}-${cveId}-${findings.length}`,
-        cveId: cveId.toUpperCase(),
-        severity: mapping.severity ? normalizeSeverity(row[mapping.severity]) : 'UNKNOWN',
-        assetName: mapping.assetName ? String(row[mapping.assetName] ?? '') || undefined : undefined,
-        assetType: mapping.assetType ? String(row[mapping.assetType] ?? '') || undefined : undefined,
-        arn: mapping.arn ? String(row[mapping.arn] ?? '') || undefined : undefined,
-        packageName: mapping.packageName ? String(row[mapping.packageName] ?? '') || undefined : undefined,
-        installedVersion: mapping.installedVersion ? String(row[mapping.installedVersion] ?? '') || undefined : undefined,
-        fixedVersion: mapping.fixedVersion ? String(row[mapping.fixedVersion] ?? '') || undefined : undefined,
-        account: mapping.account ? String(row[mapping.account] ?? '') || undefined : undefined,
-        accountName: mapping.accountName ? String(row[mapping.accountName] ?? '') || undefined : undefined,
-        region: mapping.region ? String(row[mapping.region] ?? '') || undefined : undefined,
-        description: mapping.description ? String(row[mapping.description] ?? '') || undefined : undefined,
-        sla: mapping.sla ? String(row[mapping.sla] ?? '') || undefined : undefined,
-        sourceFile,
-        raw: row,
-      })
+      findings.push(buildFinding(row, cveId, mapping, sourceFile, findings.length))
     }
   }
 
@@ -272,9 +329,45 @@ export async function parseXLSX(
   return { rows, headers }
 }
 
+// ── Sheet preview (for multi-sheet Excel picker) ─────────────────────────────
+
+export interface XLSXSheetPreview {
+  name: string
+  /** Number of data rows (header excluded) */
+  rowCount: number
+  headers: string[]
+  /** First ≤5 data rows */
+  preview: Record<string, unknown>[]
+}
+
+/** Read every sheet in the workbook and return lightweight metadata + a 5-row preview.
+ *  Uses the sheet's cell range so the full sheet is never converted to JSON. */
+export async function getXLSXSheetsPreview(file: File): Promise<XLSXSheetPreview[]> {
+  const buffer = await file.arrayBuffer()
+  const workbook = XLSX.read(buffer, { type: 'array' })
+  return workbook.SheetNames.map((name) => {
+    const sheet = workbook.Sheets[name]
+    const ref = sheet['!ref']
+    const range = ref ? XLSX.utils.decode_range(ref) : null
+    // Row count = total rows minus the header row
+    const rowCount = range ? Math.max(0, range.e.r - range.s.r) : 0
+    // Only convert the first 5 data rows for the preview
+    const previewRange: XLSX.Range | undefined = range
+      ? { s: range.s, e: { r: Math.min(range.s.r + 5, range.e.r), c: range.e.c } }
+      : undefined
+    const preview = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+      defval: '',
+      ...(previewRange ? { range: previewRange } : {}),
+    })
+    const headers = preview.length > 0 ? Object.keys(preview[0]) : []
+    return { name, rowCount, headers, preview }
+  })
+}
+
 export async function parseXLSXWithProgress(
   file: File,
   onProgress: (pct: number, phase: string) => void,
+  sheetName?: string,
 ): Promise<{ rows: Record<string, unknown>[]; headers: string[] }> {
   onProgress(5, 'Reading file…')
   await yieldToUI()
@@ -287,8 +380,8 @@ export async function parseXLSXWithProgress(
   onProgress(35, 'Extracting rows…')
   await yieldToUI()
 
-  const sheetName = workbook.SheetNames[0]
-  const sheet = workbook.Sheets[sheetName]
+  const sheetToUse = sheetName ?? workbook.SheetNames[0]
+  const sheet = workbook.Sheets[sheetToUse]
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' })
   const headers = rows.length > 0 ? Object.keys(rows[0]) : []
 
@@ -308,10 +401,11 @@ export async function parseFileRaw(
 export async function parseFileRawWithProgress(
   file: File,
   onProgress: (pct: number, phase: string) => void,
+  sheetName?: string,
 ): Promise<{ rows: Record<string, unknown>[]; headers: string[] }> {
   const ext = file.name.split('.').pop()?.toLowerCase()
   if (ext === 'csv') return parseCSVWithProgress(file, onProgress)
-  if (ext === 'xlsx' || ext === 'xls') return parseXLSXWithProgress(file, onProgress)
+  if (ext === 'xlsx' || ext === 'xls') return parseXLSXWithProgress(file, onProgress, sheetName)
   throw new Error(`Unsupported file format: ${ext}`)
 }
 
@@ -335,24 +429,7 @@ export async function rowsToFindingsAsync(
       if (cveMatches.length === 0) continue
 
       for (const cveId of cveMatches) {
-        findings.push({
-          id: `${sourceFile}-${cveId}-${findings.length}`,
-          cveId: cveId.toUpperCase(),
-          severity: mapping.severity ? normalizeSeverity(row[mapping.severity]) : 'UNKNOWN',
-          assetName: mapping.assetName ? String(row[mapping.assetName] ?? '') || undefined : undefined,
-          assetType: mapping.assetType ? String(row[mapping.assetType] ?? '') || undefined : undefined,
-          arn: mapping.arn ? String(row[mapping.arn] ?? '') || undefined : undefined,
-          packageName: mapping.packageName ? String(row[mapping.packageName] ?? '') || undefined : undefined,
-          installedVersion: mapping.installedVersion ? String(row[mapping.installedVersion] ?? '') || undefined : undefined,
-          fixedVersion: mapping.fixedVersion ? String(row[mapping.fixedVersion] ?? '') || undefined : undefined,
-          account: mapping.account ? String(row[mapping.account] ?? '') || undefined : undefined,
-          accountName: mapping.accountName ? String(row[mapping.accountName] ?? '') || undefined : undefined,
-          region: mapping.region ? String(row[mapping.region] ?? '') || undefined : undefined,
-          description: mapping.description ? String(row[mapping.description] ?? '') || undefined : undefined,
-          sla: mapping.sla ? String(row[mapping.sla] ?? '') || undefined : undefined,
-          sourceFile,
-          raw: row,
-        })
+        findings.push(buildFinding(row, cveId, mapping, sourceFile, findings.length))
       }
     }
 

@@ -62,6 +62,11 @@ const DIMENSION_LABELS: Record<DimensionKey, string> = {
   cveYear: 'CVE Year',
   cveId: 'CVE ID',
   sla: 'SLA / Due Date',
+  environment: 'Environment',
+  findingType: 'Finding Type',
+  treatment: 'Treatment',
+  exploitAvailable: 'Exploit Available',
+  riskPriority: 'Risk Priority',
 }
 
 const METRIC_LABELS: Record<MetricKey, string> = {
@@ -98,6 +103,11 @@ function getDimensionValue(f: Finding, dim: DimensionKey): string {
     case 'sourceFile': return f.sourceFile
     case 'cveYear': return f.cveId.split('-')[1] ?? '(unknown)'
     case 'cveId': return f.cveId
+    case 'environment': return f.environment ?? '(none)'
+    case 'findingType': return f.findingType ?? '(none)'
+    case 'treatment': return f.treatment ?? '(none)'
+    case 'exploitAvailable': return f.exploitKnown ? 'Known Exploited' : f.exploitAvailable ? 'Exploit Available' : f.exploitPoC ? 'PoC Only' : 'No Exploit'
+    case 'riskPriority': return f.priorityLabel ?? 'MONITOR'
     case 'sla': {
       if (!f.sla) return '(no SLA)'
       const d = new Date(f.sla)
@@ -714,6 +724,15 @@ export function AnalyticsPage() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* ── Custom Bubble Chart Builder ──────────────────────────────── */}
+      <div>
+        <h2 className="text-lg font-semibold mb-1">Custom Bubble Chart</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Interactively explore risk by selecting any dimension for X axis, Y axis, bubble size, and color.
+        </p>
+        <CVSSBubbleChart />
       </div>
     </div>
   )

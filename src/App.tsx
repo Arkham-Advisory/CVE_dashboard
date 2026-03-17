@@ -5,6 +5,7 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { FindingsPage } from '@/pages/FindingsPage'
 import { AnalyticsPage } from '@/pages/AnalyticsPage'
 import { ReportPage } from '@/pages/ReportPage'
+import { AssetRiskPage } from '@/pages/AssetRiskPage'
 import { useAppStore } from '@/store/useAppStore'
 
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/findings" element={<FindingsPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/assets" element={<AssetRiskPage />} />
           <Route path="/report" element={<ReportPage />} />
         </Routes>
       </Layout>

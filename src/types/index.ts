@@ -1,4 +1,6 @@
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE' | 'UNKNOWN'
+export type RiskPriority = 'IMMEDIATE' | 'HIGH_PRIORITY' | 'SCHEDULED_FIX' | 'MONITOR'
+export type FixStatus = 'AVAILABLE' | 'NONE' | 'UNKNOWN'
 
 /** Canonical severity order from most to least critical. */
 export const SEVERITY_ORDER: Record<Severity, number> = {
@@ -35,6 +37,16 @@ export interface Finding {
   sla?: string           // SLA due date or remediation deadline
   sourceFile: string
   raw: Record<string, unknown>
+  // Extended dimensions
+  findingType?: string
+  treatment?: string
+  exploitAvailable?: boolean
+  exploitKnown?: boolean
+  exploitPoC?: boolean
+  environment?: string
+  // Computed
+  riskScore?: number
+  priorityLabel?: RiskPriority
 }
 
 export interface CVEGroup {
@@ -52,8 +64,20 @@ export interface DashboardMetrics {
   criticalFindings: number
   affectedAssets: number
   severityCounts: Record<Severity, number>
-  topCVEs: Array<{ cveId: string; count: number; severity: Severity }>
-  topAssets: Array<{ asset: string; count: number }>
+  topCVEs: Array<{ cveId: string; count: number; severity: Severity; affectedAssets: number }>
+  topAssets: Array<{ asset: string; count: number; bySeverity: Record<Severity, number> }>
+  securityScore: number
+  exploitableFindings: number
+  fixableFindings: number
+  topRemediationTargets: Array<{
+    cveId: string
+    severity: Severity
+    affectedAssets: number
+    fixAvailable: boolean
+    riskScore: number
+    exploitable: boolean
+  }>
+  blastRadius: { cveId: string; affectedAssets: number; severity: Severity } | null
 }
 
 export interface ColumnMapping {
@@ -70,6 +94,12 @@ export interface ColumnMapping {
   region?: string
   description?: string
   sla?: string
+  findingType?: string
+  treatment?: string
+  exploitAvailable?: string
+  exploitKnown?: string
+  exploitPoC?: string
+  environment?: string
 }
 
 export interface Upload {
@@ -120,6 +150,11 @@ export type DimensionKey =
   | 'cveYear'
   | 'cveId'
   | 'sla'
+  | 'environment'
+  | 'findingType'
+  | 'treatment'
+  | 'exploitAvailable'
+  | 'riskPriority'
 
 export type MetricKey = 'findings' | 'uniqueCVEs' | 'affectedAssets' | 'fixableFindings'
 
