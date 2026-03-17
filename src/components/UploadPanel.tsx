@@ -1,5 +1,5 @@
 import { useCallback, useState, useRef } from 'react'
-import { Upload, FileSpreadsheet, Settings, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { Upload, FileSpreadsheet, Settings, CheckCircle2, XCircle, Loader2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAppStore } from '@/store/useAppStore'
@@ -59,7 +59,7 @@ export function UploadPanel() {
   const [pendingQueue, setPendingQueue] = useState<FileState[]>([])  // ready → awaiting mapping
   const [remapTarget, setRemapTarget] = useState<UploadType | null>(null)
   const [sheetPicker, setSheetPicker] = useState<SheetPickerState | null>(null)
-  const { addFindings, uploads, clearAll, remapUpload } = useAppStore()
+  const { addFindings, uploads, clearAll, remapUpload, removeUpload } = useAppStore()
   const processingRef = useRef(new Set<string>()) // prevent double-processing
 
   // Update a single file's state by key
@@ -356,11 +356,11 @@ export function UploadPanel() {
                   key={u.id}
                   className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
                 >
-                  <div className="flex items-center gap-2">
-                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-medium">{u.fileName}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileSpreadsheet className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="font-medium truncate">{u.fileName}</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 shrink-0">
                     <span className="text-xs text-muted-foreground">
                       {u.rowCount.toLocaleString()} rows
                     </span>
@@ -372,6 +372,15 @@ export function UploadPanel() {
                       onClick={() => setRemapTarget(u)}
                     >
                       <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:text-destructive"
+                      title="Remove file"
+                      onClick={() => removeUpload(u.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
                     </Button>
                   </div>
                 </div>

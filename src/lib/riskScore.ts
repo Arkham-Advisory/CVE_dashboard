@@ -70,9 +70,20 @@ export function computeSecurityScore(findings: Finding[]): number {
 /**
  * Derive the fix status for a finding.
  */
+const NO_FIX_STRINGS = new Set([
+  'no', 'none', 'n/a', 'na', 'false', 'unavailable', 'not available',
+  'no fix', 'no fix available', 'not fixed', 'unfixed', '-', '',
+])
+
 export function getFixStatus(finding: Finding): FixStatus {
+  const fv = (finding.fixedVersion ?? '').trim().toLowerCase()
+  // Treat explicit "no fix" placeholders as NONE
+  if (NO_FIX_STRINGS.has(fv)) {
+    // Only return NONE if there's actually a value (not blank → UNKNOWN)
+    return fv === '' ? 'UNKNOWN' : 'NONE'
+  }
   if (finding.fixedVersion && finding.fixedVersion.trim() !== '') return 'AVAILABLE'
-  // Some scanners use a placeholder that means "no fix"
+  // Some scanners expose fix status in a separate field
   const raw = String(finding.raw?.fixStatus ?? finding.raw?.fix_status ?? '').toLowerCase()
   if (raw === 'none' || raw === 'unavailable' || raw === 'not available' || raw === 'n/a') {
     return 'NONE'

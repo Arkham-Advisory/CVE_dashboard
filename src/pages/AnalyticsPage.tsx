@@ -726,14 +726,6 @@ export function AnalyticsPage() {
         </div>
       </div>
 
-      {/* ── Custom Bubble Chart Builder ──────────────────────────────── */}
-      <div>
-        <h2 className="text-lg font-semibold mb-1">Custom Bubble Chart</h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Interactively explore risk by selecting any dimension for X axis, Y axis, bubble size, and color.
-        </p>
-        <CVSSBubbleChart />
-      </div>
     </div>
   )
 }

@@ -166,7 +166,7 @@ export function CVEDetailDrawer() {
       <div className="flex-1 bg-black/40" onClick={() => setSelectedCVE(null)} />
 
       {/* Drawer */}
-      <div className="w-full max-w-2xl bg-background border-l shadow-xl flex flex-col">
+      <div className="w-full max-w-4xl bg-background border-l shadow-xl flex flex-col">
         {/* Header */}
         <div className="flex items-start justify-between p-6 border-b gap-4">
           <div className="space-y-1.5 flex-1 min-w-0">
@@ -369,36 +369,51 @@ export function CVEDetailDrawer() {
             {/* Dependency Chain / Affected Packages */}
             {dependencyChain.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                   <GitBranch className="h-4 w-4" /> Dependency Chain
                 </h3>
-                <p className="text-xs text-muted-foreground mb-2">
-                  This CVE is present in the following packages across your assets:
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {dependencyChain.map((pkg) => {
-                    const pkgFindings = selectedCVE.findings.filter((f) => f.packageName === pkg)
-                    const versions = Array.from(new Set(pkgFindings.map((f) => f.installedVersion).filter(Boolean)))
-                    const fixes = Array.from(new Set(pkgFindings.map((f) => f.fixedVersion).filter(Boolean)))
-                    return (
-                      <div key={pkg} className="rounded-md bg-secondary px-3 py-2 text-xs">
-                        <div className="font-mono font-semibold">{pkg}</div>
-                        {versions.length > 0 && (
-                          <div className="text-muted-foreground text-[10px]">
-                            Installed: {versions.join(', ')}
-                          </div>
-                        )}
-                        {fixes.length > 0 && (
-                          <div className="text-green-600 text-[10px] font-medium">
-                            Fix: {fixes.join(', ')}
-                          </div>
-                        )}
-                        <div className="text-muted-foreground text-[10px]">
-                          {pkgFindings.length} finding{pkgFindings.length !== 1 ? 's' : ''} · {new Set(pkgFindings.map((f) => f.assetName).filter(Boolean)).size} assets
-                        </div>
-                      </div>
-                    )
-                  })}
+                <div className="rounded-md border overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Package</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Installed</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Fix Version</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Findings</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Assets</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dependencyChain.map((pkg, i) => {
+                        const pkgFindings = selectedCVE.findings.filter((f) => f.packageName === pkg)
+                        const versions = Array.from(new Set(pkgFindings.map((f) => f.installedVersion).filter(Boolean)))
+                        const fixes = Array.from(new Set(pkgFindings.map((f) => f.fixedVersion).filter(Boolean)))
+                        const assetsCount = new Set(pkgFindings.map((f) => f.assetName).filter(Boolean)).size
+                        const hasFix = fixes.length > 0
+                        return (
+                          <tr key={pkg} className={`border-t ${i % 2 ? 'bg-muted/10' : ''}`}>
+                            <td className="px-3 py-2 font-mono font-semibold">{pkg}</td>
+                            <td className="px-3 py-2 font-mono text-muted-foreground">
+                              {versions.length > 0 ? versions.join(', ') : <span className="text-muted-foreground/40">—</span>}
+                            </td>
+                            <td className="px-3 py-2 font-mono">
+                              {hasFix ? (
+                                <span className="text-green-600 font-medium">{fixes.join(', ')}</span>
+                              ) : (
+                                <span className="text-orange-500 text-[11px] font-medium">No fix available</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <span className="inline-flex items-center justify-center rounded-full bg-primary/10 text-primary font-semibold px-2 py-0.5 min-w-[1.5rem]">
+                                {pkgFindings.length}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right text-muted-foreground">{assetsCount}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}

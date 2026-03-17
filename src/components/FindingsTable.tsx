@@ -267,7 +267,15 @@ export function FindingsTable() {
                 </span>
               </div>
               {f.environment && (
-                <span className="text-[10px] text-muted-foreground italic">{f.environment}</span>
+                <span
+                  className={`text-[10px] font-medium rounded px-1 py-0.5 ${
+                    /prod/i.test(f.environment)
+                      ? 'bg-red-100 text-red-700 border border-red-200'
+                      : 'text-muted-foreground italic'
+                  }`}
+                >
+                  {f.environment}
+                </span>
               )}
             </div>
           )
@@ -298,10 +306,11 @@ export function FindingsTable() {
         cell: (info) => {
           const f = info.row.original
           const status = getFixStatus(f)
+          const showVersion = f.fixedVersion && !['no', 'n/a', 'na', 'none', 'false', '-'].includes(f.fixedVersion.trim().toLowerCase())
           return (
             <div className="space-y-0.5">
               <FixStatusBadge status={status} compact />
-              {f.fixedVersion && (
+              {showVersion && (
                 <div className="text-[10px] text-muted-foreground tabular-nums">→ v{f.fixedVersion}</div>
               )}
             </div>
@@ -316,6 +325,10 @@ export function FindingsTable() {
           const v = info.getValue() as string | undefined
           if (!v) return <span className="text-muted-foreground text-xs">—</span>
           const d = new Date(v)
+          const isValid = !isNaN(d.getTime())
+          if (!isValid) {
+            return <span className="text-xs text-muted-foreground">{v}</span>
+          }
           const isPast = d < new Date()
           return (
             <span className={`text-xs tabular-nums ${isPast ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>

@@ -17,6 +17,7 @@ interface AppState {
   // Actions
   addFindings: (findings: Finding[], upload: Upload) => void
   clearAll: () => void
+  removeUpload: (uploadId: string) => void
   setSelectedCVE: (cve: CVEGroup | null) => void
   updateColumnMapping: (mapping: ColumnMapping) => void
   remapUpload: (uploadId: string, newMapping: ColumnMapping) => void
@@ -193,6 +194,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   clearAll: () => set({ uploads: [], findings: [], cveGroups: [], metrics: emptyMetrics, isDemoMode: false }),
+
+  removeUpload: (uploadId) => {
+    const { uploads, findings } = get()
+    const upload = uploads.find((u) => u.id === uploadId)
+    if (!upload) return
+    const remaining = findings.filter((f) => f.sourceFile !== upload.fileName)
+    const allFindings = enrichFindings(remaining)
+    const newUploads = uploads.filter((u) => u.id !== uploadId)
+    set({
+      uploads: newUploads,
+      findings: allFindings,
+      cveGroups: groupByCVE(allFindings),
+      metrics: computeMetrics(allFindings),
+      isDemoMode: newUploads.length === 0 ? false : get().isDemoMode,
+    })
+  },
 
   setSelectedCVE: (cve) => set({ selectedCVE: cve }),
 
